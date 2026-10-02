@@ -1,0 +1,128 @@
+<script>
+  (() => {
+    const state = window.INITIAL_STATE || {
+      eventName: 'Feria de Stands',
+      status: 'draft',
+      stands: [],
+    };
+
+    const statusLabels = {
+      draft: 'Preparando la votación',
+      open: 'Votación abierta',
+      closed: 'Votación finalizada',
+    };
+
+    const eventTitle = document.querySelector('#eventTitle');
+    const votingStatus = document.querySelector('#votingStatus');
+    const statusText = document.querySelector('#statusText');
+    const standGrid = document.querySelector('#standGrid');
+    const standCount = document.querySelector('#standCount');
+    const emptyState = document.querySelector('#emptyState');
+    const cardTemplate = document.querySelector('#standCardTemplate');
+    const photoDialog = document.querySelector('#photoDialog');
+    const adminDialog = document.querySelector('#adminDialog');
+
+    function renderApp() {
+      eventTitle.textContent = state.eventName || 'Feria de Stands';
+      votingStatus.dataset.status = state.status;
+      statusText.textContent = statusLabels[state.status] || statusLabels.draft;
+      renderStands(Array.isArray(state.stands) ? state.stands : []);
+    }
+
+    function renderStands(stands) {
+      standGrid.replaceChildren();
+      standCount.textContent = `${stands.length} ${stands.length === 1 ? 'stand' : 'stands'}`;
+      emptyState.hidden = stands.length > 0;
+      standGrid.hidden = stands.length === 0;
+
+      stands.forEach((stand, index) => {
+        const fragment = cardTemplate.content.cloneNode(true);
+        const mediaButton = fragment.querySelector('.stand-card__media');
+        const number = fragment.querySelector('.stand-card__number');
+        const voteButton = fragment.querySelector('.button--vote');
+        const displayNumber = String(index + 1).padStart(2, '0');
+
+        fragment.querySelector('.stand-card__label').textContent = `Propuesta ${displayNumber}`;
+        fragment.querySelector('.stand-card__title').textContent = stand.name;
+        fragment.querySelector('.stand-card__description').textContent = stand.description || '';
+
+        if (stand.imageUrl) {
+          const image = document.createElement('img');
+          image.src = stand.imageUrl;
+          image.alt = `Foto de ${stand.name}`;
+          image.loading = 'lazy';
+          number.replaceWith(image);
+        } else {
+          number.textContent = displayNumber;
+          mediaButton.setAttribute('aria-label', `Ver detalle de ${stand.name}`);
+        }
+
+        voteButton.disabled = state.status !== 'open';
+        voteButton.title = state.status === 'open'
+          ? `Votar por ${stand.name}`
+          : 'La votación todavía no está habilitada';
+
+        mediaButton.addEventListener('click', () => openPhoto(stand, displayNumber));
+        voteButton.addEventListener('click', () => selectStand(stand));
+        standGrid.appendChild(fragment);
+      });
+    }
+
+    function openPhoto(stand, displayNumber) {
+      const media = document.querySelector('#photoDialogMedia');
+      const title = document.querySelector('#photoDialogTitle');
+      const description = document.querySelector('#photoDialogDescription');
+
+      media.replaceChildren();
+      title.textContent = stand.name;
+      description.textContent = stand.description || '';
+
+      if (stand.imageUrl) {
+        const image = document.createElement('img');
+        image.src = stand.imageUrl;
+        image.alt = `Foto ampliada de ${stand.name}`;
+        media.appendChild(image);
+      } else {
+        const number = document.createElement('span');
+        number.textContent = displayNumber;
+        media.appendChild(number);
+      }
+
+      photoDialog.showModal();
+    }
+
+    function selectStand(stand) {
+      if (state.status !== 'open') return;
+
+      // La confirmación y el registro en Sheets se implementarán en la etapa de votación.
+      window.alert(`Seleccionaste ${stand.name}. Próximamente confirmaremos el voto aquí.`);
+    }
+
+    function openAdminDialog() {
+      document.querySelector('#pinMessage').textContent = '';
+      adminDialog.showModal();
+      window.setTimeout(() => document.querySelector('#adminPin').focus(), 50);
+    }
+
+    document.querySelector('#adminButton').addEventListener('click', openAdminDialog);
+    document.querySelector('#footerAdminButton').addEventListener('click', openAdminDialog);
+
+    document.querySelector('#pinForm').addEventListener('submit', (event) => {
+      event.preventDefault();
+      document.querySelector('#pinMessage').textContent =
+        'El panel y la validación segura del PIN se conectarán en la próxima etapa.';
+    });
+
+    document.querySelectorAll('[data-close-dialog]').forEach((button) => {
+      button.addEventListener('click', () => button.closest('dialog').close());
+    });
+
+    [photoDialog, adminDialog].forEach((dialog) => {
+      dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) dialog.close();
+      });
+    });
+
+    renderApp();
+  })();
+</script>

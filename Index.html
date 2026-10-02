@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <?!= include('Stylesheet'); ?>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#main-content" aria-label="Ir al contenido principal">
+        <span class="brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" role="img">
+            <path d="M7 3h10v3a5 5 0 0 1-4 4.9V14h3v2H8v-2h3v-3.1A5 5 0 0 1 7 6V3Zm-3 1h2v2a6.9 6.9 0 0 0 2 4.9l-1.4 1.4A8.9 8.9 0 0 1 4 6V4Zm14 0h2v2a8.9 8.9 0 0 1-2.6 6.3L16 10.9A6.9 6.9 0 0 0 18 6V4ZM6 18h12v3H6v-3Z"/>
+          </svg>
+        </span>
+        <span>
+          <strong>Votación de stands</strong>
+          <small>Elegí tu favorito</small>
+        </span>
+      </a>
+
+      <button class="button button--quiet" id="adminButton" type="button">
+        Administrar
+      </button>
+    </header>
+
+    <main id="main-content">
+      <section class="hero" aria-labelledby="eventTitle">
+        <div class="hero__content">
+          <p class="eyebrow">Evento en vivo</p>
+          <h1 id="eventTitle">Feria de Stands</h1>
+          <p class="hero__intro">
+            Mirá cada propuesta con atención. Cuando se habilite la votación,
+            vas a poder elegir un único stand.
+          </p>
+
+          <div class="status" id="votingStatus" role="status" aria-live="polite">
+            <span class="status__dot" aria-hidden="true"></span>
+            <span id="statusText">Preparando la votación</span>
+          </div>
+        </div>
+
+        <div class="hero__shape" aria-hidden="true">
+          <span>01</span>
+          <span>02</span>
+          <span>03</span>
+        </div>
+      </section>
+
+      <section class="stands-section" aria-labelledby="standsTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Participantes</p>
+            <h2 id="standsTitle">Conocé los stands</h2>
+          </div>
+          <p id="standCount">0 stands</p>
+        </div>
+
+        <div class="stand-grid" id="standGrid" aria-live="polite"></div>
+
+        <div class="empty-state" id="emptyState" hidden>
+          <div class="empty-state__icon" aria-hidden="true">+</div>
+          <h3>Todavía no hay stands publicados</h3>
+          <p>Las fotos van a aparecer acá a medida que el administrador las cargue.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>Una experiencia de votación simple y rápida.</p>
+      <button class="text-button" id="footerAdminButton" type="button">
+        Acceso de administración
+      </button>
+    </footer>
+
+    <dialog class="dialog" id="photoDialog" aria-labelledby="photoDialogTitle">
+      <button class="dialog__close" type="button" data-close-dialog aria-label="Cerrar">
+        &times;
+      </button>
+      <div id="photoDialogMedia" class="dialog__media"></div>
+      <div class="dialog__body">
+        <p class="eyebrow">Detalle del stand</p>
+        <h2 id="photoDialogTitle"></h2>
+        <p id="photoDialogDescription"></p>
+      </div>
+    </dialog>
+
+    <dialog class="dialog dialog--small" id="adminDialog" aria-labelledby="adminDialogTitle">
+      <button class="dialog__close" type="button" data-close-dialog aria-label="Cerrar">
+        &times;
+      </button>
+      <div class="dialog__body">
+        <p class="eyebrow">Área restringida</p>
+        <h2 id="adminDialogTitle">Administrar el evento</h2>
+        <p>Ingresá el PIN para abrir el panel de control.</p>
+
+        <form class="pin-form" id="pinForm">
+          <label for="adminPin">PIN de acceso</label>
+          <input
+            id="adminPin"
+            name="pin"
+            type="password"
+            inputmode="numeric"
+            autocomplete="current-password"
+            maxlength="8"
+            required
+          >
+          <button class="button button--primary" type="submit">Continuar</button>
+          <p class="form-message" id="pinMessage" role="status" aria-live="polite"></p>
+        </form>
+      </div>
+    </dialog>
+
+    <template id="standCardTemplate">
+      <article class="stand-card">
+        <button class="stand-card__media" type="button">
+          <span class="stand-card__number"></span>
+          <span class="stand-card__zoom">Ver foto completa</span>
+        </button>
+        <div class="stand-card__content">
+          <div>
+            <p class="stand-card__label"></p>
+            <h3 class="stand-card__title"></h3>
+            <p class="stand-card__description"></p>
+          </div>
+          <button class="button button--vote" type="button">
+            <span>Votar por este stand</span>
+            <span aria-hidden="true">&rarr;</span>
+          </button>
+        </div>
+      </article>
+    </template>
+
+    <script>
+      window.INITIAL_STATE = <?!= initialStateJson ?>;
+    </script>
+    <?!= include('JavaScript'); ?>
+  </body>
+</html>
