@@ -1,0 +1,24 @@
+{
+  "name": "sistema_votacion_stands",
+  "version": "1.0.0",
+  "description": "Aplicación web sencilla para publicar fotos de stands y habilitar una votación durante un evento. Está pensada para ejecutarse como una aplicación web de Google Apps Script y utilizar Google Sheets como base de datos.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FerEconomist/sistema_votacion_stands.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/FerEconomist/sistema_votacion_stands/issues"
+  },
+  "homepage": "https://github.com/FerEconomist/sistema_votacion_stands#readme",
+  "devDependencies": {
+    "@google/clasp": "^3.4.1"
+  }
+}
