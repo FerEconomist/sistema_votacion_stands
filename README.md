@@ -14,14 +14,15 @@ Apps Script no trabaja cómodamente con carpetas internas, por eso los archivos 
 
 ## Estado actual
 
-La primera versión de la interfaz incluye:
+La interfaz incluye:
 
-- grilla responsive de stands;
-- estado visible de la votación;
-- botones de voto deshabilitados mientras el evento está en preparación;
-- ampliación de cada foto en una ventana;
-- acceso visual al futuro panel de administración mediante PIN;
-- datos temporales para poder diseñar la pantalla antes de conectar Sheets.
+- encabezado compacto con institución, título y logo configurables desde Sheets;
+- 3 stands por fila en orientación vertical y 5 en horizontal;
+- 30 stands temporales mientras no exista la hoja `Stands`;
+- ampliación de cada foto y selección desde la vista ampliada;
+- confirmación final mediante un botón fijo al pie de la pantalla;
+- registro en la hoja `Votos` y bloqueo de un segundo voto desde el mismo navegador;
+- acceso visual al futuro panel de administración mediante PIN.
 
 ## Diseño propuesto para Google Sheets
 
@@ -29,9 +30,21 @@ Se usará un único archivo con estas hojas:
 
 | Hoja | Responsabilidad |
 | --- | --- |
-| `Configuracion` | nombre del evento, estado (`draft`, `open`, `closed`) y referencias necesarias |
-| `Stands` | identificador, nombre, descripción, URL de la foto, orden y estado visible |
+| `configuracion` | nombre de la institución, título, logo y estado (`draft`, `open`, `closed`) |
+| `Stands` | identificador, nombre, URL de la foto, orden y estado visible |
 | `Votos` | fecha, identificador anónimo del dispositivo y stand elegido |
+
+Claves reconocidas en `configuracion`:
+
+| Clave | Ejemplo |
+| --- | --- |
+| `nombre_institucion` | `CENMA Brigadier J. I. San Martín Anexo Sacchi` |
+| `logo_url` | enlace compartido del archivo de Drive |
+| `titulo_sistema` | `Sistema de votación` |
+| `estado_votacion` | `open` |
+
+El ID de la base puede reemplazarse sin editar el código mediante la propiedad de
+script `SPREADSHEET_ID`.
 
 El PIN no debe guardarse en una celda ni enviarse al navegador. Se almacenará como propiedad privada del script y se comprobará únicamente en el servidor.
 
@@ -43,8 +56,7 @@ Si el evento necesita una garantía más fuerte de “una persona, un voto”, l
 
 ## Próximas etapas
 
-1. Conectar la grilla con la hoja `Stands`.
+1. Cargar los datos y las fotos definitivas en la hoja `Stands`.
 2. Crear el panel mínimo de administración: abrir, cerrar y reiniciar.
-3. Registrar el voto en el servidor y bloquear duplicados.
-4. Agregar carga de fotos y generación del QR público.
-5. Mostrar resultados y hacer una prueba de carga.
+3. Agregar carga de fotos y generación del QR público.
+4. Mostrar resultados y hacer una prueba de carga.

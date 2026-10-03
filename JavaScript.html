@@ -1,9 +1,14 @@
 <script>
   (() => {
-    const state = window.INITIAL_STATE || {
-      eventName: 'Feria de Stands',
+    const state = {
+      institutionName: 'CENMA Brigadier J. I. San Martín Anexo Sacchi',
+      systemTitle: 'Sistema de votación',
+      logoUrl: '',
       status: 'draft',
       stands: [],
+      selectedStandId: '',
+      hasVoted: false,
+      ...window.INITIAL_STATE,
     };
 
     const statusLabels = {
@@ -12,39 +17,84 @@
       closed: 'Votación finalizada',
     };
 
-    const eventTitle = document.querySelector('#eventTitle');
-    const votingStatus = document.querySelector('#votingStatus');
-    const statusText = document.querySelector('#statusText');
-    const standGrid = document.querySelector('#standGrid');
-    const standCount = document.querySelector('#standCount');
-    const emptyState = document.querySelector('#emptyState');
-    const cardTemplate = document.querySelector('#standCardTemplate');
-    const photoDialog = document.querySelector('#photoDialog');
-    const adminDialog = document.querySelector('#adminDialog');
+    const elements = {
+      institutionName: document.querySelector('#institutionName'),
+      systemTitle: document.querySelector('#systemTitle'),
+      institutionLogo: document.querySelector('#institutionLogo'),
+      logoFallback: document.querySelector('#logoFallback'),
+      votingStatus: document.querySelector('#votingStatus'),
+      statusText: document.querySelector('#statusText'),
+      standGrid: document.querySelector('#standGrid'),
+      standCount: document.querySelector('#standCount'),
+      emptyState: document.querySelector('#emptyState'),
+      cardTemplate: document.querySelector('#standCardTemplate'),
+      selectedStandName: document.querySelector('#selectedStandName'),
+      confirmVoteButton: document.querySelector('#confirmVoteButton'),
+      photoDialog: document.querySelector('#photoDialog'),
+      photoDialogMedia: document.querySelector('#photoDialogMedia'),
+      photoDialogTitle: document.querySelector('#photoDialogTitle'),
+      selectFromPhotoButton: document.querySelector('#selectFromPhotoButton'),
+      confirmVoteDialog: document.querySelector('#confirmVoteDialog'),
+      confirmVoteTitle: document.querySelector('#confirmVoteTitle'),
+      confirmVoteText: document.querySelector('#confirmVoteText'),
+      submitVoteButton: document.querySelector('#submitVoteButton'),
+      cancelVoteButton: document.querySelector('#cancelVoteButton'),
+      voteMessage: document.querySelector('#voteMessage'),
+      adminDialog: document.querySelector('#adminDialog'),
+    };
+
+    let activePhotoStand = null;
 
     function renderApp() {
-      eventTitle.textContent = state.eventName || 'Feria de Stands';
-      votingStatus.dataset.status = state.status;
-      statusText.textContent = statusLabels[state.status] || statusLabels.draft;
+      elements.institutionName.textContent = state.institutionName;
+      elements.systemTitle.textContent = state.systemTitle;
+      document.title = `${state.systemTitle} · ${state.institutionName}`;
+      renderLogo();
+
+      elements.votingStatus.dataset.status = state.status;
+      elements.statusText.textContent = statusLabels[state.status] || statusLabels.draft;
       renderStands(Array.isArray(state.stands) ? state.stands : []);
+      renderSelection();
+    }
+
+    function renderLogo() {
+      if (!state.logoUrl) {
+        elements.institutionLogo.hidden = true;
+        elements.logoFallback.hidden = false;
+        return;
+      }
+
+      elements.institutionLogo.addEventListener('load', () => {
+        elements.institutionLogo.hidden = false;
+        elements.logoFallback.hidden = true;
+      }, { once: true });
+
+      elements.institutionLogo.addEventListener('error', () => {
+        elements.institutionLogo.hidden = true;
+        elements.logoFallback.hidden = false;
+      }, { once: true });
+
+      elements.institutionLogo.src = state.logoUrl;
+      elements.institutionLogo.alt = `Logo de ${state.institutionName}`;
     }
 
     function renderStands(stands) {
-      standGrid.replaceChildren();
-      standCount.textContent = `${stands.length} ${stands.length === 1 ? 'stand' : 'stands'}`;
-      emptyState.hidden = stands.length > 0;
-      standGrid.hidden = stands.length === 0;
+      elements.standGrid.replaceChildren();
+      elements.standCount.textContent = `${stands.length} ${stands.length === 1 ? 'stand' : 'stands'}`;
+      elements.emptyState.hidden = stands.length > 0;
+      elements.standGrid.hidden = stands.length === 0;
 
       stands.forEach((stand, index) => {
-        const fragment = cardTemplate.content.cloneNode(true);
+        const fragment = elements.cardTemplate.content.cloneNode(true);
+        const card = fragment.querySelector('.stand-card');
         const mediaButton = fragment.querySelector('.stand-card__media');
         const number = fragment.querySelector('.stand-card__number');
-        const voteButton = fragment.querySelector('.button--vote');
+        const title = fragment.querySelector('.stand-card__title');
         const displayNumber = String(index + 1).padStart(2, '0');
 
-        fragment.querySelector('.stand-card__label').textContent = `Propuesta ${displayNumber}`;
-        fragment.querySelector('.stand-card__title').textContent = stand.name;
-        fragment.querySelector('.stand-card__description').textContent = stand.description || '';
+        card.dataset.standId = stand.id;
+        title.textContent = stand.name;
+        mediaButton.setAttribute('aria-label', `Ampliar imagen de ${stand.name}`);
 
         if (stand.imageUrl) {
           const image = document.createElement('img');
@@ -54,58 +104,184 @@
           number.replaceWith(image);
         } else {
           number.textContent = displayNumber;
-          mediaButton.setAttribute('aria-label', `Ver detalle de ${stand.name}`);
         }
 
-        voteButton.disabled = state.status !== 'open';
-        voteButton.title = state.status === 'open'
-          ? `Votar por ${stand.name}`
-          : 'La votación todavía no está habilitada';
-
         mediaButton.addEventListener('click', () => openPhoto(stand, displayNumber));
-        voteButton.addEventListener('click', () => selectStand(stand));
-        standGrid.appendChild(fragment);
+        elements.standGrid.appendChild(fragment);
       });
     }
 
     function openPhoto(stand, displayNumber) {
-      const media = document.querySelector('#photoDialogMedia');
-      const title = document.querySelector('#photoDialogTitle');
-      const description = document.querySelector('#photoDialogDescription');
-
-      media.replaceChildren();
-      title.textContent = stand.name;
-      description.textContent = stand.description || '';
+      activePhotoStand = stand;
+      elements.photoDialogMedia.replaceChildren();
+      elements.photoDialogTitle.textContent = stand.name;
 
       if (stand.imageUrl) {
         const image = document.createElement('img');
         image.src = stand.imageUrl;
         image.alt = `Foto ampliada de ${stand.name}`;
-        media.appendChild(image);
+        elements.photoDialogMedia.appendChild(image);
       } else {
         const number = document.createElement('span');
         number.textContent = displayNumber;
-        media.appendChild(number);
+        elements.photoDialogMedia.appendChild(number);
       }
 
-      photoDialog.showModal();
+      const canSelect = state.status === 'open' && !state.hasVoted;
+      elements.selectFromPhotoButton.disabled = !canSelect;
+      elements.selectFromPhotoButton.textContent = canSelect
+        ? state.selectedStandId === stand.id
+          ? 'Stand seleccionado'
+          : 'Seleccionar este stand'
+        : state.hasVoted
+          ? 'Voto ya registrado'
+          : 'La votación no está abierta';
+
+      elements.photoDialog.showModal();
     }
 
-    function selectStand(stand) {
-      if (state.status !== 'open') return;
+    function selectActivePhotoStand() {
+      if (!activePhotoStand || state.status !== 'open' || state.hasVoted) return;
 
-      // La confirmación y el registro en Sheets se implementarán en la etapa de votación.
-      window.alert(`Seleccionaste ${stand.name}. Próximamente confirmaremos el voto aquí.`);
+      state.selectedStandId = activePhotoStand.id;
+      elements.photoDialog.close();
+      renderSelection();
+    }
+
+    function renderSelection() {
+      const selectedStand = getSelectedStand();
+
+      elements.standGrid.querySelectorAll('.stand-card').forEach((card) => {
+        const isSelected = card.dataset.standId === state.selectedStandId;
+        card.classList.toggle('is-selected', isSelected);
+        card.querySelector('.stand-card__selected').hidden = !isSelected;
+      });
+
+      if (state.hasVoted) {
+        elements.selectedStandName.textContent = selectedStand
+          ? `Voto registrado: ${selectedStand.name}`
+          : 'Este dispositivo ya registró su voto';
+        elements.confirmVoteButton.textContent = 'Voto registrado';
+        elements.confirmVoteButton.disabled = true;
+        return;
+      }
+
+      elements.selectedStandName.textContent = selectedStand
+        ? selectedStand.name
+        : 'Todavía no elegiste un stand';
+      elements.confirmVoteButton.textContent = 'Confirmar voto';
+      elements.confirmVoteButton.disabled = !selectedStand || state.status !== 'open';
+    }
+
+    function getSelectedStand() {
+      return state.stands.find((stand) => stand.id === state.selectedStandId) || null;
+    }
+
+    function openVoteConfirmation() {
+      const selectedStand = getSelectedStand();
+      if (!selectedStand || state.status !== 'open' || state.hasVoted) return;
+
+      elements.confirmVoteTitle.textContent = 'Confirmá tu voto';
+      elements.confirmVoteText.textContent = `Vas a votar por ${selectedStand.name}. Esta acción no se puede deshacer.`;
+      elements.voteMessage.textContent = '';
+      elements.voteMessage.dataset.state = '';
+      elements.submitVoteButton.hidden = false;
+      elements.submitVoteButton.disabled = false;
+      elements.submitVoteButton.textContent = 'Sí, confirmar voto';
+      elements.cancelVoteButton.textContent = 'Volver';
+      elements.confirmVoteDialog.showModal();
+    }
+
+    function submitVote() {
+      const selectedStand = getSelectedStand();
+      if (!selectedStand || state.hasVoted) return;
+
+      elements.submitVoteButton.disabled = true;
+      elements.submitVoteButton.textContent = 'Registrando…';
+      elements.voteMessage.textContent = '';
+
+      if (!window.google || !google.script || !google.script.run) {
+        showVoteError('El registro solo está disponible desde la aplicación publicada.');
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(handleVoteResult)
+        .withFailureHandler((error) => {
+          showVoteError(error && error.message
+            ? error.message
+            : 'No pudimos registrar el voto. Intentá nuevamente.');
+        })
+        .registerVote({
+          standId: selectedStand.id,
+          deviceId: getDeviceId(),
+        });
+    }
+
+    function handleVoteResult(result) {
+      if (!result || !result.ok) {
+        if (result && result.alreadyVoted) {
+          state.hasVoted = true;
+          elements.confirmVoteTitle.textContent = 'Voto ya registrado';
+          elements.confirmVoteText.textContent = result.message;
+          elements.voteMessage.textContent = '';
+          elements.submitVoteButton.hidden = true;
+          elements.cancelVoteButton.textContent = 'Cerrar';
+          renderSelection();
+          return;
+        }
+
+        showVoteError(result && result.message
+          ? result.message
+          : 'No pudimos registrar el voto. Intentá nuevamente.');
+        return;
+      }
+
+      state.hasVoted = true;
+      elements.confirmVoteTitle.textContent = '¡Voto registrado!';
+      elements.confirmVoteText.textContent = result.message;
+      elements.voteMessage.textContent = 'Gracias por participar.';
+      elements.voteMessage.dataset.state = 'success';
+      elements.submitVoteButton.hidden = true;
+      elements.cancelVoteButton.textContent = 'Cerrar';
+      renderSelection();
+    }
+
+    function showVoteError(message) {
+      elements.voteMessage.textContent = message;
+      elements.voteMessage.dataset.state = 'error';
+      elements.submitVoteButton.disabled = false;
+      elements.submitVoteButton.textContent = 'Intentar nuevamente';
+    }
+
+    function getDeviceId() {
+      const storageKey = 'stand-voting-device-id';
+
+      try {
+        const storedId = window.localStorage.getItem(storageKey);
+        if (storedId) return storedId;
+
+        const newId = window.crypto && typeof window.crypto.randomUUID === 'function'
+          ? window.crypto.randomUUID()
+          : `device-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+        window.localStorage.setItem(storageKey, newId);
+        return newId;
+      } catch (error) {
+        return `device-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+      }
     }
 
     function openAdminDialog() {
       document.querySelector('#pinMessage').textContent = '';
-      adminDialog.showModal();
+      elements.adminDialog.showModal();
       window.setTimeout(() => document.querySelector('#adminPin').focus(), 50);
     }
 
+    elements.selectFromPhotoButton.addEventListener('click', selectActivePhotoStand);
+    elements.confirmVoteButton.addEventListener('click', openVoteConfirmation);
+    elements.submitVoteButton.addEventListener('click', submitVote);
+    elements.cancelVoteButton.addEventListener('click', () => elements.confirmVoteDialog.close());
     document.querySelector('#adminButton').addEventListener('click', openAdminDialog);
-    document.querySelector('#footerAdminButton').addEventListener('click', openAdminDialog);
 
     document.querySelector('#pinForm').addEventListener('submit', (event) => {
       event.preventDefault();
@@ -117,7 +293,7 @@
       button.addEventListener('click', () => button.closest('dialog').close());
     });
 
-    [photoDialog, adminDialog].forEach((dialog) => {
+    [elements.photoDialog, elements.confirmVoteDialog, elements.adminDialog].forEach((dialog) => {
       dialog.addEventListener('click', (event) => {
         if (event.target === dialog) dialog.close();
       });
