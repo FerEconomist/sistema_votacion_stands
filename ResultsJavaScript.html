@@ -1,0 +1,108 @@
+<script>
+  (() => {
+    const state = {
+      institutionName: 'CENMA Brigadier J. I. San Martín Anexo Sacchi',
+      systemTitle: 'Sistema de votación',
+      logoUrl: '',
+      enabled: false,
+      totalVotes: 0,
+      ranking: [],
+      updatedAt: '',
+      ...window.INITIAL_STATE,
+    };
+
+    const elements = {
+      institutionName: document.querySelector('#institutionName'),
+      systemTitle: document.querySelector('#systemTitle'),
+      institutionLogo: document.querySelector('#institutionLogo'),
+      logoFallback: document.querySelector('#logoFallback'),
+      totalVotes: document.querySelector('#totalVotes'),
+      updatedAt: document.querySelector('#updatedAt'),
+      rankingList: document.querySelector('#rankingList'),
+      rankingItemTemplate: document.querySelector('#rankingItemTemplate'),
+      resultsEmpty: document.querySelector('#resultsEmpty'),
+      resultsDisabled: document.querySelector('#resultsDisabled'),
+      resultsTotalCard: document.querySelector('#resultsTotalCard'),
+    };
+
+    function render() {
+      elements.institutionName.textContent = state.institutionName;
+      elements.systemTitle.textContent = state.systemTitle;
+      document.title = `Resultados · ${state.institutionName}`;
+      renderLogo();
+
+      elements.totalVotes.textContent = String(state.totalVotes || 0);
+      elements.updatedAt.textContent = state.updatedAt
+        ? `Actualizado ${state.updatedAt}`
+        : 'Actualizando…';
+      elements.rankingList.replaceChildren();
+
+      if (!state.enabled) {
+        elements.resultsDisabled.hidden = false;
+        elements.resultsEmpty.hidden = true;
+        elements.rankingList.hidden = true;
+        elements.resultsTotalCard.hidden = true;
+        return;
+      }
+
+      elements.resultsDisabled.hidden = true;
+      elements.resultsTotalCard.hidden = false;
+      const ranking = Array.isArray(state.ranking) ? state.ranking : [];
+      elements.resultsEmpty.hidden = ranking.length > 0;
+      elements.rankingList.hidden = ranking.length === 0;
+
+      ranking.forEach((stand) => {
+        const fragment = elements.rankingItemTemplate.content.cloneNode(true);
+        fragment.querySelector('.ranking-item__position').textContent = stand.position;
+        fragment.querySelector('.ranking-item__name').textContent = stand.name;
+        fragment.querySelector('.ranking-item__votes').textContent =
+          `${stand.votes} ${stand.votes === 1 ? 'voto' : 'votos'}`;
+        fragment.querySelector('.ranking-item__percentage').textContent =
+          `${formatPercentage(stand.percentage)}% del total`;
+        fragment.querySelector('.ranking-item__bar span').style.width =
+          `${Math.max(0, Math.min(100, Number(stand.percentage) || 0))}%`;
+        elements.rankingList.appendChild(fragment);
+      });
+    }
+
+    function renderLogo() {
+      if (!state.logoUrl) {
+        elements.institutionLogo.hidden = true;
+        elements.logoFallback.hidden = false;
+        return;
+      }
+
+      elements.institutionLogo.addEventListener('load', () => {
+        elements.institutionLogo.hidden = false;
+        elements.logoFallback.hidden = true;
+      }, { once: true });
+      elements.institutionLogo.addEventListener('error', () => {
+        elements.institutionLogo.hidden = true;
+        elements.logoFallback.hidden = false;
+      }, { once: true });
+      elements.institutionLogo.src = state.logoUrl;
+      elements.institutionLogo.alt = `Logo de ${state.institutionName}`;
+    }
+
+    function formatPercentage(value) {
+      return new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 }).format(value || 0);
+    }
+
+    function refreshResults() {
+      if (!window.google || !google.script || !google.script.run) return;
+
+      google.script.run
+        .withSuccessHandler((result) => {
+          Object.assign(state, result || {});
+          render();
+        })
+        .withFailureHandler(() => {
+          elements.updatedAt.textContent = 'No se pudo actualizar. Reintentando…';
+        })
+        .getPublicResults();
+    }
+
+    render();
+    window.setInterval(refreshResults, 7000);
+  })();
+</script>

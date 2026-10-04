@@ -8,28 +8,37 @@
   <body>
     <header class="site-header">
       <a class="brand" href="#main-content" aria-label="Ir al contenido principal">
+        <span class="brand__logo-wrap">
+          <img id="institutionLogo" class="brand__logo" alt="" hidden>
+          <span id="logoFallback" class="brand__logo-fallback" aria-hidden="true">CENMA</span>
+        </span>
         <span class="brand__text">
           <strong id="institutionName">CENMA Brigadier J. I. San Martín Anexo Sacchi</strong>
           <small id="systemTitle">Sistema de votación</small>
-        </span>
-        <span class="brand__logo-wrap" aria-hidden="true">
-          <img id="institutionLogo" class="brand__logo" alt="" hidden>
-          <span id="logoFallback" class="brand__logo-fallback">SV</span>
         </span>
       </a>
     </header>
 
     <main id="main-content">
+      <section class="voting-status" id="votingStatus" role="status" aria-live="polite">
+        <div class="voting-status__inner">
+          <span class="voting-status__dot" aria-hidden="true"></span>
+          <div class="voting-status__copy">
+            <span class="voting-status__label">Estado de la votación</span>
+            <strong id="statusText">Votación cerrada</strong>
+          </div>
+          <p class="voting-status__opening" id="estimatedOpening">
+            <span>Apertura estimada</span>
+            <strong id="estimatedOpeningText">Horario a confirmar</strong>
+          </p>
+        </div>
+      </section>
+
       <section class="voting-intro" aria-labelledby="pageTitle">
         <div>
           <p class="eyebrow">Elegí tu favorito</p>
           <h1 id="pageTitle">Stands participantes</h1>
           <p>Tocá una imagen para ampliarla y seleccioná un único stand.</p>
-        </div>
-
-        <div class="status" id="votingStatus" role="status" aria-live="polite">
-          <span class="status__dot" aria-hidden="true"></span>
-          <span id="statusText">Preparando la votación</span>
         </div>
       </section>
 
@@ -50,9 +59,19 @@
 
     <footer class="site-footer">
       <p>Una experiencia de votación simple y rápida.</p>
-      <button class="text-button" id="adminButton" type="button">
-        Acceso de administración
-      </button>
+      <div class="site-footer__actions">
+        <a
+          class="text-button"
+          id="resultsLink"
+          href="?view=results"
+          target="_blank"
+          rel="noopener"
+          hidden
+        >Ver resultados</a>
+        <button class="text-button" id="adminButton" type="button">
+          Acceso de administración
+        </button>
+      </div>
     </footer>
 
     <aside class="vote-bar" id="voteBar" aria-label="Confirmación del voto">
@@ -99,28 +118,124 @@
       </div>
     </dialog>
 
-    <dialog class="dialog dialog--small" id="adminDialog" aria-labelledby="adminDialogTitle">
+    <dialog class="dialog dialog--admin" id="adminDialog" aria-labelledby="adminDialogTitle">
       <button class="dialog__close" type="button" data-close-dialog aria-label="Cerrar">
         &times;
       </button>
       <div class="dialog__body">
         <p class="eyebrow">Área restringida</p>
         <h2 id="adminDialogTitle">Administrar el evento</h2>
-        <p>Ingresá el PIN para abrir el panel de control.</p>
 
-        <form class="pin-form" id="pinForm">
-          <label for="adminPin">PIN de acceso</label>
+        <div id="adminLoginView">
+          <p>Ingresá el PIN de cuatro dígitos para abrir el panel de control.</p>
+          <form class="pin-form" id="pinForm">
+            <label for="adminPin">PIN de acceso</label>
+            <input
+              id="adminPin"
+              name="pin"
+              type="password"
+              inputmode="numeric"
+              autocomplete="current-password"
+              minlength="4"
+              maxlength="4"
+              pattern="[0-9]{4}"
+              required
+            >
+            <button class="button button--primary" type="submit">Continuar</button>
+            <p class="form-message" id="pinMessage" role="status" aria-live="polite"></p>
+          </form>
+        </div>
+
+        <section class="admin-panel" id="adminPanel" aria-label="Panel administrativo" hidden>
+          <div class="admin-summary">
+            <div>
+              <span>Estado</span>
+              <strong id="adminStatus">Cerrada</strong>
+            </div>
+            <div>
+              <span>Votos</span>
+              <strong id="adminVoteCount">0</strong>
+            </div>
+            <div>
+              <span>Fotos activas</span>
+              <strong id="adminPhotoCount">0</strong>
+            </div>
+          </div>
+
+          <div class="admin-action-grid">
+            <button class="button button--open" id="openVotingButton" type="button">
+              Abrir votación
+            </button>
+            <button class="button button--dark" id="closeVotingButton" type="button">
+              Cerrar votación
+            </button>
+          </div>
+
+          <form class="admin-opening-form" id="openingTimeForm">
+            <label for="adminOpeningTime">Horario estimado de apertura</label>
+            <div>
+              <input
+                id="adminOpeningTime"
+                type="text"
+                maxlength="80"
+                placeholder="Ejemplo: 18:30 h"
+              >
+              <button class="button button--secondary" type="submit">Guardar horario</button>
+            </div>
+          </form>
+
+          <div class="admin-danger-zone">
+            <div>
+              <strong>Acciones de reinicio</strong>
+              <p>Estas acciones guardan una copia antes de limpiar los datos.</p>
+            </div>
+            <div class="admin-action-grid">
+              <button class="button button--secondary" id="resetVotingButton" type="button">
+                Reiniciar votación
+              </button>
+              <button class="button button--danger" id="emptyStandsButton" type="button">
+                Vaciar stands
+              </button>
+            </div>
+          </div>
+
+          <div class="admin-panel__footer">
+            <button class="text-button" id="adminLogoutButton" type="button">Cerrar sesión</button>
+            <p class="form-message" id="adminMessage" role="status" aria-live="polite"></p>
+          </div>
+        </section>
+      </div>
+    </dialog>
+
+    <dialog class="dialog dialog--small" id="dangerDialog" aria-labelledby="dangerDialogTitle">
+      <button class="dialog__close" type="button" data-close-dialog aria-label="Cerrar">
+        &times;
+      </button>
+      <div class="dialog__body">
+        <p class="eyebrow">Confirmación de seguridad</p>
+        <h2 id="dangerDialogTitle">Confirmar acción</h2>
+        <p id="dangerDialogText"></p>
+        <form class="pin-form" id="dangerForm">
+          <label for="dangerPin">Volvé a ingresar el PIN</label>
           <input
-            id="adminPin"
-            name="pin"
+            id="dangerPin"
             type="password"
             inputmode="numeric"
-            autocomplete="current-password"
-            maxlength="8"
+            autocomplete="off"
+            minlength="4"
+            maxlength="4"
+            pattern="[0-9]{4}"
             required
           >
-          <button class="button button--primary" type="submit">Continuar</button>
-          <p class="form-message" id="pinMessage" role="status" aria-live="polite"></p>
+          <div class="dialog__actions">
+            <button class="button button--secondary" id="cancelDangerButton" type="button">
+              Cancelar
+            </button>
+            <button class="button button--danger" id="confirmDangerButton" type="submit">
+              Confirmar
+            </button>
+          </div>
+          <p class="form-message" id="dangerMessage" role="status" aria-live="polite"></p>
         </form>
       </div>
     </dialog>

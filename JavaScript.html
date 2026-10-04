@@ -4,7 +4,9 @@
       institutionName: 'CENMA Brigadier J. I. San Martín Anexo Sacchi',
       systemTitle: 'Sistema de votación',
       logoUrl: '',
-      status: 'draft',
+      status: 'closed',
+      estimatedOpening: '',
+      showResults: false,
       stands: [],
       selectedStandId: '',
       hasVoted: false,
@@ -12,9 +14,9 @@
     };
 
     const statusLabels = {
-      draft: 'Preparando la votación',
+      draft: 'Votación cerrada',
       open: 'Votación abierta',
-      closed: 'Votación finalizada',
+      closed: 'Votación cerrada',
     };
 
     const elements = {
@@ -24,6 +26,8 @@
       logoFallback: document.querySelector('#logoFallback'),
       votingStatus: document.querySelector('#votingStatus'),
       statusText: document.querySelector('#statusText'),
+      estimatedOpening: document.querySelector('#estimatedOpening'),
+      estimatedOpeningText: document.querySelector('#estimatedOpeningText'),
       standGrid: document.querySelector('#standGrid'),
       standCount: document.querySelector('#standCount'),
       emptyState: document.querySelector('#emptyState'),
@@ -40,27 +44,77 @@
       submitVoteButton: document.querySelector('#submitVoteButton'),
       cancelVoteButton: document.querySelector('#cancelVoteButton'),
       voteMessage: document.querySelector('#voteMessage'),
+      resultsLink: document.querySelector('#resultsLink'),
       adminDialog: document.querySelector('#adminDialog'),
+      adminLoginView: document.querySelector('#adminLoginView'),
+      pinForm: document.querySelector('#pinForm'),
+      adminPin: document.querySelector('#adminPin'),
+      pinMessage: document.querySelector('#pinMessage'),
+      adminPanel: document.querySelector('#adminPanel'),
+      adminStatus: document.querySelector('#adminStatus'),
+      adminVoteCount: document.querySelector('#adminVoteCount'),
+      adminPhotoCount: document.querySelector('#adminPhotoCount'),
+      openVotingButton: document.querySelector('#openVotingButton'),
+      closeVotingButton: document.querySelector('#closeVotingButton'),
+      openingTimeForm: document.querySelector('#openingTimeForm'),
+      adminOpeningTime: document.querySelector('#adminOpeningTime'),
+      resetVotingButton: document.querySelector('#resetVotingButton'),
+      emptyStandsButton: document.querySelector('#emptyStandsButton'),
+      adminLogoutButton: document.querySelector('#adminLogoutButton'),
+      adminMessage: document.querySelector('#adminMessage'),
+      dangerDialog: document.querySelector('#dangerDialog'),
+      dangerDialogTitle: document.querySelector('#dangerDialogTitle'),
+      dangerDialogText: document.querySelector('#dangerDialogText'),
+      dangerForm: document.querySelector('#dangerForm'),
+      dangerPin: document.querySelector('#dangerPin'),
+      dangerMessage: document.querySelector('#dangerMessage'),
+      confirmDangerButton: document.querySelector('#confirmDangerButton'),
+      cancelDangerButton: document.querySelector('#cancelDangerButton'),
     };
 
     let activePhotoStand = null;
+    let adminToken = getStoredAdminToken();
+    let pendingDangerAction = '';
 
     function renderApp() {
       elements.institutionName.textContent = state.institutionName;
       elements.systemTitle.textContent = state.systemTitle;
       document.title = `${state.systemTitle} · ${state.institutionName}`;
       renderLogo();
-
-      elements.votingStatus.dataset.status = state.status;
-      elements.statusText.textContent = statusLabels[state.status] || statusLabels.draft;
+      renderVotingStatus();
+      renderResultsLink();
       renderStands(Array.isArray(state.stands) ? state.stands : []);
       renderSelection();
+    }
+
+    function applyPublicState(publicState) {
+      if (!publicState) return;
+      Object.assign(state, publicState);
+      renderApp();
+    }
+
+    function renderVotingStatus() {
+      const isOpen = state.status === 'open';
+      const estimatedOpening = String(state.estimatedOpening || '').trim();
+
+      elements.votingStatus.dataset.status = state.status;
+      elements.statusText.textContent = statusLabels[state.status] || statusLabels.closed;
+      elements.estimatedOpening.hidden = isOpen;
+      elements.estimatedOpeningText.textContent = estimatedOpening || 'Horario a confirmar';
+    }
+
+    function renderResultsLink() {
+      elements.resultsLink.hidden = !state.showResults;
     }
 
     function renderLogo() {
       if (!state.logoUrl) {
         elements.institutionLogo.hidden = true;
         elements.logoFallback.hidden = false;
+        return;
+      }
+
+      if (elements.institutionLogo.src === state.logoUrl && !elements.institutionLogo.hidden) {
         return;
       }
 
@@ -142,7 +196,6 @@
 
     function selectActivePhotoStand() {
       if (!activePhotoStand || state.status !== 'open' || state.hasVoted) return;
-
       state.selectedStandId = activePhotoStand.id;
       elements.photoDialog.close();
       renderSelection();
@@ -183,8 +236,7 @@
 
       elements.confirmVoteTitle.textContent = 'Confirmá tu voto';
       elements.confirmVoteText.textContent = `Vas a votar por ${selectedStand.name}. Esta acción no se puede deshacer.`;
-      elements.voteMessage.textContent = '';
-      elements.voteMessage.dataset.state = '';
+      setMessage(elements.voteMessage, '');
       elements.submitVoteButton.hidden = false;
       elements.submitVoteButton.disabled = false;
       elements.submitVoteButton.textContent = 'Sí, confirmar voto';
@@ -192,30 +244,23 @@
       elements.confirmVoteDialog.showModal();
     }
 
-    function submitVote() {
+    async function submitVote() {
       const selectedStand = getSelectedStand();
       if (!selectedStand || state.hasVoted) return;
 
       elements.submitVoteButton.disabled = true;
       elements.submitVoteButton.textContent = 'Registrando…';
-      elements.voteMessage.textContent = '';
+      setMessage(elements.voteMessage, '');
 
-      if (!window.google || !google.script || !google.script.run) {
-        showVoteError('El registro solo está disponible desde la aplicación publicada.');
-        return;
-      }
-
-      google.script.run
-        .withSuccessHandler(handleVoteResult)
-        .withFailureHandler((error) => {
-          showVoteError(error && error.message
-            ? error.message
-            : 'No pudimos registrar el voto. Intentá nuevamente.');
-        })
-        .registerVote({
+      try {
+        const result = await callServer('registerVote', {
           standId: selectedStand.id,
           deviceId: getDeviceId(),
         });
+        handleVoteResult(result);
+      } catch (error) {
+        showVoteError(error.message || 'No pudimos registrar el voto. Intentá nuevamente.');
+      }
     }
 
     function handleVoteResult(result) {
@@ -224,7 +269,7 @@
           state.hasVoted = true;
           elements.confirmVoteTitle.textContent = 'Voto ya registrado';
           elements.confirmVoteText.textContent = result.message;
-          elements.voteMessage.textContent = '';
+          setMessage(elements.voteMessage, '');
           elements.submitVoteButton.hidden = true;
           elements.cancelVoteButton.textContent = 'Cerrar';
           renderSelection();
@@ -240,23 +285,262 @@
       state.hasVoted = true;
       elements.confirmVoteTitle.textContent = '¡Voto registrado!';
       elements.confirmVoteText.textContent = result.message;
-      elements.voteMessage.textContent = 'Gracias por participar.';
-      elements.voteMessage.dataset.state = 'success';
+      setMessage(elements.voteMessage, 'Gracias por participar.', 'success');
       elements.submitVoteButton.hidden = true;
       elements.cancelVoteButton.textContent = 'Cerrar';
       renderSelection();
     }
 
     function showVoteError(message) {
-      elements.voteMessage.textContent = message;
-      elements.voteMessage.dataset.state = 'error';
+      setMessage(elements.voteMessage, message, 'error');
       elements.submitVoteButton.disabled = false;
       elements.submitVoteButton.textContent = 'Intentar nuevamente';
     }
 
+    async function openAdminDialog() {
+      setMessage(elements.pinMessage, '');
+      setMessage(elements.adminMessage, '');
+      elements.adminDialog.showModal();
+
+      if (!adminToken) {
+        showAdminLogin();
+        window.setTimeout(() => elements.adminPin.focus(), 50);
+        return;
+      }
+
+      showAdminLoading();
+      try {
+        const adminState = await callServer('getAdminState', adminToken);
+        showAdminPanel(adminState);
+      } catch (error) {
+        clearAdminToken();
+        showAdminLogin(error.message);
+      }
+    }
+
+    async function submitAdminPin(event) {
+      event.preventDefault();
+      const pin = elements.adminPin.value.trim();
+      setMessage(elements.pinMessage, 'Comprobando…');
+      setFormBusy(elements.pinForm, true);
+
+      try {
+        const result = await callServer('authenticateAdmin', {
+          pin,
+          deviceId: getDeviceId(),
+        });
+        adminToken = result.token;
+        storeAdminToken(adminToken);
+        elements.adminPin.value = '';
+        showAdminPanel(result.adminState);
+      } catch (error) {
+        setMessage(elements.pinMessage, error.message, 'error');
+      } finally {
+        setFormBusy(elements.pinForm, false);
+      }
+    }
+
+    function showAdminLoading() {
+      elements.adminLoginView.hidden = false;
+      elements.adminPanel.hidden = true;
+      elements.pinForm.hidden = true;
+      setMessage(elements.pinMessage, 'Cargando el panel…');
+    }
+
+    function showAdminLogin(message = '') {
+      elements.adminLoginView.hidden = false;
+      elements.adminPanel.hidden = true;
+      elements.pinForm.hidden = false;
+      setMessage(elements.pinMessage, message, message ? 'error' : '');
+    }
+
+    function showAdminPanel(adminState) {
+      elements.adminLoginView.hidden = true;
+      elements.adminPanel.hidden = false;
+      setMessage(elements.adminMessage, '');
+      renderAdminState(adminState);
+    }
+
+    function renderAdminState(adminState) {
+      if (!adminState) return;
+      const isOpen = adminState.status === 'open';
+      elements.adminStatus.textContent = isOpen ? 'Abierta' : 'Cerrada';
+      elements.adminStatus.dataset.status = adminState.status;
+      elements.adminVoteCount.textContent = String(adminState.voteCount || 0);
+      elements.adminPhotoCount.textContent = String(adminState.photoCount || 0);
+      elements.adminOpeningTime.value = adminState.estimatedOpening || '';
+      elements.openVotingButton.disabled = isOpen;
+      elements.closeVotingButton.disabled = !isOpen;
+
+      state.status = adminState.status;
+      state.estimatedOpening = adminState.estimatedOpening || '';
+      state.showResults = Boolean(adminState.showResults);
+      renderVotingStatus();
+      renderResultsLink();
+      renderSelection();
+    }
+
+    async function changeVotingStatus(status) {
+      setAdminBusy(true);
+      setMessage(elements.adminMessage, status === 'open' ? 'Abriendo…' : 'Cerrando…');
+      try {
+        const result = await callServer('setVotingStatus', { token: adminToken, status });
+        applyAdminActionResult(result);
+      } catch (error) {
+        handleAdminError(error);
+      } finally {
+        setAdminBusy(false);
+      }
+    }
+
+    async function saveOpeningTime(event) {
+      event.preventDefault();
+      setAdminBusy(true);
+      setMessage(elements.adminMessage, 'Guardando horario…');
+      try {
+        const result = await callServer('updateOpeningTime', {
+          token: adminToken,
+          openingTime: elements.adminOpeningTime.value,
+        });
+        applyAdminActionResult(result);
+      } catch (error) {
+        handleAdminError(error);
+      } finally {
+        setAdminBusy(false);
+      }
+    }
+
+    function openDangerConfirmation(action) {
+      pendingDangerAction = action;
+      elements.dangerPin.value = '';
+      setMessage(elements.dangerMessage, '');
+
+      if (action === 'resetVoting') {
+        elements.dangerDialogTitle.textContent = 'Reiniciar la votación';
+        elements.dangerDialogText.textContent =
+          'Los votos actuales se copiarán a Historial_Votos y luego se vaciará la hoja Votos. Los stands y sus fotos se conservarán.';
+        elements.confirmDangerButton.textContent = 'Archivar y reiniciar';
+      } else {
+        elements.dangerDialogTitle.textContent = 'Vaciar los stands';
+        elements.dangerDialogText.textContent =
+          'Se archivarán los votos y los stands. Las fotos activas se moverán a una nueva subcarpeta dentro de Archivadas.';
+        elements.confirmDangerButton.textContent = 'Archivar y vaciar';
+      }
+
+      elements.dangerDialog.showModal();
+      window.setTimeout(() => elements.dangerPin.focus(), 50);
+    }
+
+    async function confirmDangerAction(event) {
+      event.preventDefault();
+      if (!pendingDangerAction) return;
+
+      setFormBusy(elements.dangerForm, true);
+      setMessage(elements.dangerMessage, 'Procesando…');
+      try {
+        const result = await callServer(pendingDangerAction, {
+          token: adminToken,
+          pin: elements.dangerPin.value.trim(),
+        });
+        elements.dangerDialog.close();
+        pendingDangerAction = '';
+        applyAdminActionResult(result);
+      } catch (error) {
+        const message = error && error.message
+          ? error.message
+          : 'No se pudo completar la acción.';
+        if (message.toLowerCase().includes('sesión')) {
+          elements.dangerDialog.close();
+          pendingDangerAction = '';
+          clearAdminToken();
+          showAdminLogin(message);
+        } else {
+          setMessage(elements.dangerMessage, message, 'error');
+        }
+      } finally {
+        setFormBusy(elements.dangerForm, false);
+      }
+    }
+
+    function applyAdminActionResult(result) {
+      if (result.publicState) applyPublicState(result.publicState);
+      if (result.adminState) renderAdminState(result.adminState);
+      setMessage(elements.adminMessage, result.message || 'Cambio guardado.', 'success');
+    }
+
+    function handleAdminError(error) {
+      const message = error && error.message ? error.message : 'No se pudo completar la acción.';
+      if (message.toLowerCase().includes('sesión')) {
+        clearAdminToken();
+        showAdminLogin(message);
+        return;
+      }
+      setMessage(elements.adminMessage, message, 'error');
+    }
+
+    async function logoutAdmin() {
+      const token = adminToken;
+      clearAdminToken();
+      showAdminLogin();
+      if (token) {
+        try {
+          await callServer('logoutAdmin', token);
+        } catch (error) {
+          // La sesión local ya quedó cerrada aunque el servidor no responda.
+        }
+      }
+    }
+
+    function setAdminBusy(isBusy) {
+      elements.adminPanel.querySelectorAll('button, input').forEach((control) => {
+        control.disabled = isBusy;
+      });
+
+      if (!isBusy) {
+        const isOpen = state.status === 'open';
+        elements.openVotingButton.disabled = isOpen;
+        elements.closeVotingButton.disabled = !isOpen;
+      }
+    }
+
+    function setFormBusy(form, isBusy) {
+      form.querySelectorAll('button, input').forEach((control) => {
+        control.disabled = isBusy;
+      });
+    }
+
+    function setMessage(element, message, stateName = '') {
+      element.textContent = message || '';
+      element.dataset.state = stateName;
+    }
+
+    function getStoredAdminToken() {
+      try {
+        return window.sessionStorage.getItem('stand-voting-admin-token') || '';
+      } catch (error) {
+        return '';
+      }
+    }
+
+    function storeAdminToken(token) {
+      try {
+        window.sessionStorage.setItem('stand-voting-admin-token', token);
+      } catch (error) {
+        // La sesión seguirá activa mientras esta página permanezca abierta.
+      }
+    }
+
+    function clearAdminToken() {
+      adminToken = '';
+      try {
+        window.sessionStorage.removeItem('stand-voting-admin-token');
+      } catch (error) {
+        // No hay almacenamiento disponible para limpiar.
+      }
+    }
+
     function getDeviceId() {
       const storageKey = 'stand-voting-device-id';
-
       try {
         const storedId = window.localStorage.getItem(storageKey);
         if (storedId) return storedId;
@@ -271,10 +555,36 @@
       }
     }
 
-    function openAdminDialog() {
-      document.querySelector('#pinMessage').textContent = '';
-      elements.adminDialog.showModal();
-      window.setTimeout(() => document.querySelector('#adminPin').focus(), 50);
+    function callServer(method, ...args) {
+      return new Promise((resolve, reject) => {
+        if (!window.google || !google.script || !google.script.run) {
+          reject(new Error('Esta función solo está disponible desde la aplicación publicada.'));
+          return;
+        }
+
+        const runner = google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler((error) => reject(new Error(
+            error && error.message ? error.message : 'No se pudo completar la operación.'
+          )));
+
+        const methods = {
+          registerVote: () => runner.registerVote(...args),
+          authenticateAdmin: () => runner.authenticateAdmin(...args),
+          getAdminState: () => runner.getAdminState(...args),
+          logoutAdmin: () => runner.logoutAdmin(...args),
+          setVotingStatus: () => runner.setVotingStatus(...args),
+          updateOpeningTime: () => runner.updateOpeningTime(...args),
+          resetVoting: () => runner.resetVoting(...args),
+          emptyStands: () => runner.emptyStands(...args),
+        };
+
+        if (!methods[method]) {
+          reject(new Error('La operación solicitada no existe.'));
+          return;
+        }
+        methods[method]();
+      });
     }
 
     elements.selectFromPhotoButton.addEventListener('click', selectActivePhotoStand);
@@ -282,18 +592,26 @@
     elements.submitVoteButton.addEventListener('click', submitVote);
     elements.cancelVoteButton.addEventListener('click', () => elements.confirmVoteDialog.close());
     document.querySelector('#adminButton').addEventListener('click', openAdminDialog);
-
-    document.querySelector('#pinForm').addEventListener('submit', (event) => {
-      event.preventDefault();
-      document.querySelector('#pinMessage').textContent =
-        'El panel y la validación segura del PIN se conectarán en la próxima etapa.';
-    });
+    elements.pinForm.addEventListener('submit', submitAdminPin);
+    elements.openVotingButton.addEventListener('click', () => changeVotingStatus('open'));
+    elements.closeVotingButton.addEventListener('click', () => changeVotingStatus('closed'));
+    elements.openingTimeForm.addEventListener('submit', saveOpeningTime);
+    elements.resetVotingButton.addEventListener('click', () => openDangerConfirmation('resetVoting'));
+    elements.emptyStandsButton.addEventListener('click', () => openDangerConfirmation('emptyStands'));
+    elements.adminLogoutButton.addEventListener('click', logoutAdmin);
+    elements.dangerForm.addEventListener('submit', confirmDangerAction);
+    elements.cancelDangerButton.addEventListener('click', () => elements.dangerDialog.close());
 
     document.querySelectorAll('[data-close-dialog]').forEach((button) => {
       button.addEventListener('click', () => button.closest('dialog').close());
     });
 
-    [elements.photoDialog, elements.confirmVoteDialog, elements.adminDialog].forEach((dialog) => {
+    [
+      elements.photoDialog,
+      elements.confirmVoteDialog,
+      elements.adminDialog,
+      elements.dangerDialog,
+    ].forEach((dialog) => {
       dialog.addEventListener('click', (event) => {
         if (event.target === dialog) dialog.close();
       });

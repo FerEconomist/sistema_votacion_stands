@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <?!= include('Stylesheet'); ?>
+    <?!= include('ResultsStylesheet'); ?>
+  </head>
+  <body class="results-page">
+    <header class="site-header">
+      <a class="brand" href="?" aria-label="Volver a la votación">
+        <span class="brand__logo-wrap">
+          <img id="institutionLogo" class="brand__logo" alt="" hidden>
+          <span id="logoFallback" class="brand__logo-fallback" aria-hidden="true">CENMA</span>
+        </span>
+        <span class="brand__text">
+          <strong id="institutionName">CENMA Brigadier J. I. San Martín Anexo Sacchi</strong>
+          <small id="systemTitle">Sistema de votación</small>
+        </span>
+      </a>
+    </header>
+
+    <main class="results-main">
+      <section class="results-hero" aria-labelledby="resultsTitle">
+        <div>
+          <p class="eyebrow">Conteo en tiempo real</p>
+          <h1 id="resultsTitle">Resultados de la votación</h1>
+          <p>Las primeras diez posiciones se actualizan automáticamente.</p>
+        </div>
+        <div class="results-total" id="resultsTotalCard">
+          <span>Votos registrados</span>
+          <strong id="totalVotes">0</strong>
+        </div>
+      </section>
+
+      <section class="results-card" id="resultsContent" aria-live="polite">
+        <div class="results-card__heading">
+          <div>
+            <p class="eyebrow">Clasificación</p>
+            <h2>Primeras posiciones</h2>
+          </div>
+          <p id="updatedAt">Cargando resultados…</p>
+        </div>
+
+        <ol class="ranking-list" id="rankingList"></ol>
+
+        <div class="empty-state" id="resultsEmpty" hidden>
+          <h3>Todavía no hay votos registrados</h3>
+          <p>El ranking aparecerá cuando comience la votación.</p>
+        </div>
+
+        <div class="empty-state results-disabled" id="resultsDisabled" hidden>
+          <h3>Los resultados no están publicados</h3>
+          <p>El administrador puede habilitarlos desde la hoja de configuración.</p>
+        </div>
+      </section>
+
+      <a class="button button--secondary results-back" href="?">Volver a la votación</a>
+    </main>
+
+    <template id="rankingItemTemplate">
+      <li class="ranking-item">
+        <span class="ranking-item__position"></span>
+        <div class="ranking-item__stand">
+          <strong class="ranking-item__name"></strong>
+          <div class="ranking-item__bar" aria-hidden="true">
+            <span></span>
+          </div>
+        </div>
+        <div class="ranking-item__score">
+          <strong class="ranking-item__votes"></strong>
+          <span class="ranking-item__percentage"></span>
+        </div>
+      </li>
+    </template>
+
+    <script>
+      window.INITIAL_STATE = <?!= initialStateJson ?>;
+    </script>
+    <?!= include('ResultsJavaScript'); ?>
+  </body>
+</html>
