@@ -2,7 +2,7 @@ const APP_CONFIG = Object.freeze({
   databaseSpreadsheetId: '1vLk2Woi6KEB9Bzhaeeyjs7wq_yXAIAjFlgRTUbueRcI',
   defaultInstitutionName: 'CENMA Brigadier J. I. San Martín Anexo Sacchi',
   defaultSystemTitle: 'Sistema de votación',
-  demoStandCount: 30,
+  maxStandCount: 30,
   resultsLimit: 10,
   adminSessionSeconds: 21600,
   adminAttemptWindowSeconds: 300,
@@ -51,6 +51,12 @@ function getInitialState_() {
   const spreadsheet = getDatabase_();
   const configuration = getConfiguration_(spreadsheet);
   return buildPublicState_(spreadsheet, configuration);
+}
+
+/** Fuerza el consentimiento de solo lectura de Drive desde el editor de Apps Script. */
+function authorizeDriveReadAccess() {
+  DriveApp.getRootFolder().getId();
+  return true;
 }
 
 function buildPublicState_(spreadsheet, configuration) {
@@ -492,10 +498,7 @@ function getStands_(spreadsheet, configuration) {
   const sheet = findSheet_(spreadsheet, 'stands');
 
   if (!sheet || sheet.getLastRow() < 2) {
-    const largestPhotoNumber = Object.keys(photoMap)
-      .map(Number)
-      .reduce((largest, current) => Math.max(largest, current || 0), 0);
-    return buildDemoStands_(Math.max(APP_CONFIG.demoStandCount, largestPhotoNumber), photoMap);
+    return buildPhotoStands_(photoMap);
   }
 
   const values = sheet.getDataRange().getValues();
@@ -518,6 +521,7 @@ function getStands_(spreadsheet, configuration) {
       return {
         id: String(idIndex >= 0 && row[idIndex] || `stand-${fallbackNumber}`),
         name,
+        number: standNumber,
         imageUrl: folderPhoto
           ? folderPhoto.imageUrl
           : toBrowserImageUrl_(imageIndex >= 0 ? row[imageIndex] : ''),
@@ -527,27 +531,35 @@ function getStands_(spreadsheet, configuration) {
     })
     .filter((stand) => stand.visible)
     .sort((first, second) => first.order - second.order)
-    .map(({ id, name, imageUrl }) => ({ id, name, imageUrl }));
+    .slice(0, APP_CONFIG.maxStandCount)
+    .map(({ id, name, number, imageUrl }) => ({ id, name, number, imageUrl }));
 }
 
-function buildDemoStands_(count, photoMap) {
-  return Array.from({ length: count }, (_, index) => {
-    const number = index + 1;
-    const photo = photoMap[number];
-    return {
+function buildPhotoStands_(photoMap) {
+  return Object.keys(photoMap || {})
+    .map(Number)
+    .filter((number) => Number.isInteger(number) && number > 0)
+    .sort((first, second) => first - second)
+    .slice(0, APP_CONFIG.maxStandCount)
+    .map((number) => ({
       id: `stand-${String(number).padStart(2, '0')}`,
       name: `Stand ${number}`,
-      imageUrl: photo ? photo.imageUrl : '',
-    };
-  });
+      number,
+      imageUrl: photoMap[number].imageUrl,
+    }));
 }
 
 function getActiveStandPhotos_(configuration) {
   const folderId = getDriveFolderId_(configuration.carpeta_fotos_activas_id);
-  if (!folderId) return {};
 
   try {
-    const files = DriveApp.getFolderById(folderId).getFiles();
+    const folder = findActivePhotosFolder_(folderId);
+    if (!folder) {
+      console.error('No se encontró la carpeta Fotos activas en Drive.');
+      return {};
+    }
+
+    const files = folder.getFiles();
     const photos = {};
     while (files.hasNext()) {
       const file = files.next();
@@ -570,6 +582,24 @@ function getActiveStandPhotos_(configuration) {
     console.error(`No se pudo leer la carpeta Fotos activas: ${error.message}`);
     return {};
   }
+}
+
+function findActivePhotosFolder_(folderId) {
+  if (folderId) {
+    try {
+      return DriveApp.getFolderById(folderId);
+    } catch (error) {
+      console.error(`El ID configurado para Fotos activas no es accesible: ${error.message}`);
+    }
+  }
+
+  const acceptedNames = ['Fotos activas', 'Fotos Activas', 'Fotos activa', 'Fotos Activa'];
+  for (const name of acceptedNames) {
+    const folders = DriveApp.getFoldersByName(name);
+    if (folders.hasNext()) return folders.next();
+  }
+
+  return null;
 }
 
 function extractStandNumber_(filename) {

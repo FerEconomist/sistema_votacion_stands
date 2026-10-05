@@ -144,7 +144,10 @@
         const mediaButton = fragment.querySelector('.stand-card__media');
         const number = fragment.querySelector('.stand-card__number');
         const title = fragment.querySelector('.stand-card__title');
-        const displayNumber = String(index + 1).padStart(2, '0');
+        const standNumber = Number(stand.number);
+        const displayNumber = Number.isInteger(standNumber) && standNumber > 0
+          ? String(standNumber).padStart(2, '0')
+          : String(index + 1).padStart(2, '0');
 
         card.dataset.standId = stand.id;
         title.textContent = stand.name;

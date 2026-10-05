@@ -20,7 +20,7 @@ La interfaz incluye:
 - encabezado institucional centrado y destacado, con título y logo configurables desde Sheets;
 - aviso superior prominente del estado de la votación y de la apertura estimada;
 - 3 stands por fila en orientación vertical y 5 en horizontal;
-- 30 stands temporales mientras no exista la hoja `Stands`;
+- carga automática de hasta 30 stands no secuenciales a partir de las fotos reconocidas;
 - ampliación de cada foto y selección desde la vista ampliada;
 - confirmación final mediante un botón fijo al pie de la pantalla;
 - registro en la hoja `Votos` y bloqueo de un segundo voto desde el mismo navegador;
@@ -63,6 +63,11 @@ Mientras permanezca cerrada, `horario_apertura` aparece como horario estimado.
 El ID de la base puede reemplazarse sin editar el código mediante la propiedad de
 script `SPREADSHEET_ID`.
 
+Si `carpeta_fotos_activas_id` está vacío o dejó de ser válido, la aplicación
+busca automáticamente en Drive una carpeta llamada `Fotos activas` o
+`Fotos Activa`. Configurar el ID sigue siendo recomendable si existen varias
+carpetas con esos nombres.
+
 El PIN se lee desde `configuracion`, se comprueba únicamente en el servidor y
 nunca se incluye en el estado enviado al navegador. Después de varios intentos
 incorrectos, el acceso se bloquea temporalmente.
@@ -70,10 +75,17 @@ incorrectos, el acceso se bloquea temporalmente.
 ## Flujo de fotografías
 
 La carpeta `Fotos activas` contiene las imágenes de la edición actual. El nombre
-de cada archivo debe seguir el formato `Stand 1`, `Stand 2`, etc.; la extensión
-puede ser `.jpg`, `.png`, `.webp` u otro formato de imagen compatible con el
-navegador. Si existe más de una imagen para el mismo número, se usa la modificada
-más recientemente.
+de cada archivo debe seguir el formato `Stand 1`, `Stand 7`, `Stand 42`, etc.; los
+números no necesitan ser consecutivos. La extensión puede ser `.jpg`, `.png`,
+`.webp` u otro formato de imagen compatible con el navegador. La aplicación
+publica únicamente las fotos con un nombre reconocido, las ordena por su número
+y admite hasta 30 stands. Si existe más de una imagen para el mismo número, se
+usa la modificada más recientemente.
+
+Mientras la hoja `Stands` no contenga filas, el alta se realiza solo con el
+nombre de los archivos: al renombrar una foto como `Stand 18.jpg`, aparece el
+`Stand 18` en la próxima carga de la aplicación. Si la hoja `Stands` contiene
+datos, se respetan sus nombres, visibilidad y orden, también con un máximo de 30.
 
 Al ejecutar `Vaciar stands`, la aplicación crea una subcarpeta fechada dentro de
 `Archivadas`, mueve allí el contenido de `Fotos activas`, respalda votos y datos
@@ -91,4 +103,7 @@ Si el evento necesita una garantía más fuerte de “una persona, un voto”, l
 Los cambios locales se suben al proyecto de Apps Script con `npx clasp push`.
 Después hay que actualizar la implementación de la aplicación web para que la
 URL pública utilice la nueva versión. La primera ejecución con las funciones de
-archivado solicitará autorización para administrar las carpetas de Drive.
+fotografías solicitará autorización de solo lectura a Google Drive. Este alcance
+permite publicar las imágenes sin autorizar cambios en el resto de Drive. La
+acción administrativa `Vaciar stands`, que mueve fotos a `Archivadas`, requiere
+ampliar explícitamente el alcance a acceso de Drive con escritura.
