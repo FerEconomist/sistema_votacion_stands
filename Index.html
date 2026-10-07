@@ -31,20 +31,34 @@
             <span>Apertura estimada</span>
             <strong id="estimatedOpeningText">Horario a confirmar</strong>
           </p>
+          <p class="voting-status__opening" id="estimatedClosing" hidden>
+            <span>Cierre estimado</span>
+            <strong id="estimatedClosingText">Horario a confirmar</strong>
+          </p>
         </div>
       </section>
 
       <section class="voting-intro" aria-labelledby="pageTitle">
-        <div>
-          <p class="eyebrow">Elegí tu favorito</p>
-          <h1 id="pageTitle">Stands participantes</h1>
+        <div class="voting-intro__copy">
+          <h1 id="pageTitle">Elegí tu stand favorito</h1>
           <p>Tocá una imagen para ampliarla y seleccioná un único stand.</p>
         </div>
+        <a
+          class="button voting-intro__results"
+          id="resultsLink"
+          href="#"
+          target="_blank"
+          rel="noopener"
+          hidden
+        >
+          <span aria-hidden="true">🏆</span>
+          Ver posiciones
+        </a>
       </section>
 
       <section class="stands-section" aria-labelledby="standsTitle">
-        <div class="section-heading">
-          <h2 id="standsTitle">Seleccioná un stand</h2>
+        <div class="section-heading section-heading--count-only">
+          <h2 class="visually-hidden" id="standsTitle">Stands disponibles</h2>
           <p id="standCount">0 stands</p>
         </div>
 
@@ -60,14 +74,6 @@
     <footer class="site-footer">
       <p>Una experiencia de votación simple y rápida.</p>
       <div class="site-footer__actions">
-        <a
-          class="text-button"
-          id="resultsLink"
-          href="?view=results"
-          target="_blank"
-          rel="noopener"
-          hidden
-        >Ver resultados</a>
         <button class="text-button" id="adminButton" type="button">
           Acceso de administración
         </button>

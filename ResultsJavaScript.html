@@ -5,6 +5,7 @@
       systemTitle: 'Sistema de votación',
       logoUrl: '',
       enabled: false,
+      votingUrl: '',
       totalVotes: 0,
       ranking: [],
       updatedAt: '',
@@ -23,12 +24,16 @@
       resultsEmpty: document.querySelector('#resultsEmpty'),
       resultsDisabled: document.querySelector('#resultsDisabled'),
       resultsTotalCard: document.querySelector('#resultsTotalCard'),
+      votingLinks: document.querySelectorAll('.voting-link'),
     };
 
     function render() {
       elements.institutionName.textContent = state.institutionName;
       elements.systemTitle.textContent = state.systemTitle;
       document.title = `Resultados · ${state.institutionName}`;
+      elements.votingLinks.forEach((link) => {
+        link.href = state.votingUrl || '?';
+      });
       renderLogo();
 
       elements.totalVotes.textContent = String(state.totalVotes || 0);
@@ -53,7 +58,22 @@
 
       ranking.forEach((stand) => {
         const fragment = elements.rankingItemTemplate.content.cloneNode(true);
-        fragment.querySelector('.ranking-item__position').textContent = stand.position;
+        const item = fragment.querySelector('.ranking-item');
+        const position = fragment.querySelector('.ranking-item__position');
+        const positionNumber = fragment.querySelector('.ranking-item__number');
+        const podium = {
+          1: { className: 'ranking-item--gold', label: 'copa de oro' },
+          2: { className: 'ranking-item--silver', label: 'copa de plata' },
+          3: { className: 'ranking-item--bronze', label: 'copa de bronce' },
+        }[stand.position];
+
+        positionNumber.textContent = stand.position;
+        position.setAttribute('aria-label', podium
+          ? `Puesto ${stand.position}, ${podium.label}`
+          : `Puesto ${stand.position}`);
+        if (podium) {
+          item.classList.add('ranking-item--podium', podium.className);
+        }
         fragment.querySelector('.ranking-item__name').textContent = stand.name;
         fragment.querySelector('.ranking-item__votes').textContent =
           `${stand.votes} ${stand.votes === 1 ? 'voto' : 'votos'}`;

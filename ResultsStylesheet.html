@@ -127,6 +127,44 @@
     font-weight: 900;
   }
 
+  .ranking-item__trophy {
+    display: none;
+    width: 34px;
+    height: 34px;
+  }
+
+  .ranking-item--podium .ranking-item__position {
+    width: 48px;
+    height: 48px;
+    border: 1px solid currentColor;
+    border-radius: 15px;
+    background: white;
+    box-shadow: 0 7px 18px rgba(23, 37, 33, 0.1);
+  }
+
+  .ranking-item--podium .ranking-item__trophy {
+    display: block;
+  }
+
+  .ranking-item--podium .ranking-item__number {
+    display: none;
+  }
+
+  .ranking-item--gold .ranking-item__position {
+    color: #c58b00;
+    background: #fff7d6;
+  }
+
+  .ranking-item--silver .ranking-item__position {
+    color: #77827e;
+    background: #f2f5f4;
+  }
+
+  .ranking-item--bronze .ranking-item__position {
+    color: #a9673d;
+    background: #fff0e5;
+  }
+
   .ranking-item__stand {
     min-width: 0;
   }
@@ -182,7 +220,10 @@
 
   .results-back {
     width: fit-content;
+    min-height: 54px;
     margin-top: 22px;
+    padding: 13px 24px;
+    font-size: 1.05rem;
     text-decoration: none;
   }
 
@@ -208,6 +249,12 @@
       gap: 8px;
     }
 
+    .results-back {
+      width: 100%;
+      min-height: 58px;
+      font-size: 1.08rem;
+    }
+
     .ranking-item {
       grid-template-columns: 40px minmax(0, 1fr) minmax(74px, auto);
       gap: 10px;
@@ -217,6 +264,16 @@
     .ranking-item__position {
       width: 36px;
       height: 36px;
+    }
+
+    .ranking-item--podium .ranking-item__position {
+      width: 40px;
+      height: 40px;
+    }
+
+    .ranking-item__trophy {
+      width: 29px;
+      height: 29px;
     }
   }
 </style>

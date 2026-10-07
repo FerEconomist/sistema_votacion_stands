@@ -8,7 +8,7 @@
   </head>
   <body class="results-page">
     <header class="site-header">
-      <a class="brand" href="?" aria-label="Volver a la votación">
+      <a class="brand voting-link" href="#" aria-label="Volver a la votación">
         <span class="brand__logo-wrap">
           <img id="institutionLogo" class="brand__logo" alt="" hidden>
           <span id="logoFallback" class="brand__logo-fallback" aria-hidden="true">CENMA</span>
@@ -55,12 +55,18 @@
         </div>
       </section>
 
-      <a class="button button--secondary results-back" href="?">Volver a la votación</a>
+      <a class="button button--secondary results-back voting-link" href="#">Volver a la votación</a>
     </main>
 
     <template id="rankingItemTemplate">
       <li class="ranking-item">
-        <span class="ranking-item__position"></span>
+        <span class="ranking-item__position">
+          <svg class="ranking-item__trophy" viewBox="0 0 48 48" aria-hidden="true">
+            <path d="M14 8h20v8c0 8-4 14-10 14S14 24 14 16V8Z" fill="currentColor"></path>
+            <path d="M14 12H8v4c0 6 4 10 10 10M34 12h6v4c0 6-4 10-10 10M24 30v7M18 37h12M16 42h16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"></path>
+          </svg>
+          <span class="ranking-item__number"></span>
+        </span>
         <div class="ranking-item__stand">
           <strong class="ranking-item__name"></strong>
           <div class="ranking-item__bar" aria-hidden="true">

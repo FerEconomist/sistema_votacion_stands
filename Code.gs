@@ -55,23 +55,34 @@ function getInitialState_() {
 
 /** Fuerza el consentimiento de solo lectura de Drive desde el editor de Apps Script. */
 function authorizeDriveReadAccess() {
+  ScriptApp.requireAllScopes(ScriptApp.AuthMode.FULL);
   DriveApp.getRootFolder().getId();
   return true;
 }
 
 function buildPublicState_(spreadsheet, configuration) {
+  const status = normalizeVotingStatus_(
+    configuration.estado_votacion || configuration.estado || 'closed'
+  );
+  const votingUrl = ScriptApp.getService().getUrl() || '';
+
   return {
     ...getBranding_(configuration),
-    status: normalizeVotingStatus_(
-      configuration.estado_votacion || configuration.estado || 'closed'
-    ),
+    status,
+    resultsUrl: votingUrl ? `${votingUrl}?view=results` : '?view=results',
     estimatedOpening:
       configuration.horario_apertura ||
       configuration.apertura_estimada ||
       configuration.fecha_hora_apertura ||
       configuration.hora_apertura_estimada ||
       '',
-    showResults: normalizeYesNo_(configuration.mostrar_resultados),
+    estimatedClosing:
+      configuration.horario_cierre ||
+      configuration.cierre_estimado ||
+      configuration.fecha_hora_cierre ||
+      configuration.hora_cierre_estimada ||
+      '',
+    showResults: status === 'open' || normalizeYesNo_(configuration.mostrar_resultados),
     stands: getStands_(spreadsheet, configuration),
   };
 }
@@ -91,16 +102,18 @@ function getPublicResults() {
   const spreadsheet = getDatabase_();
   const configuration = getConfiguration_(spreadsheet);
   const branding = getBranding_(configuration);
-  const enabled = normalizeYesNo_(configuration.mostrar_resultados);
+  const votingUrl = ScriptApp.getService().getUrl() || '';
   const status = normalizeVotingStatus_(
     configuration.estado_votacion || configuration.estado || 'closed'
   );
+  const enabled = status === 'open' || normalizeYesNo_(configuration.mostrar_resultados);
 
   if (!enabled) {
     return {
       ...branding,
       enabled: false,
       status,
+      votingUrl,
       totalVotes: 0,
       ranking: [],
       updatedAt: formatDateTime_(spreadsheet, new Date()),
@@ -153,6 +166,7 @@ function getPublicResults() {
     ...branding,
     enabled: true,
     status,
+    votingUrl,
     totalVotes,
     ranking,
     updatedAt: formatDateTime_(spreadsheet, new Date()),
@@ -403,6 +417,8 @@ function buildAdminState_(spreadsheet, configuration) {
     ),
     estimatedOpening:
       configuration.horario_apertura || configuration.apertura_estimada || '',
+    estimatedClosing:
+      configuration.horario_cierre || configuration.cierre_estimado || '',
     showResults: normalizeYesNo_(configuration.mostrar_resultados),
     voteCount: votesSheet ? Math.max(0, votesSheet.getLastRow() - 1) : 0,
     standCount: stands.length,

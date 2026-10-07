@@ -6,7 +6,9 @@
       logoUrl: '',
       status: 'closed',
       estimatedOpening: '',
+      estimatedClosing: '',
       showResults: false,
+      resultsUrl: '',
       stands: [],
       selectedStandId: '',
       hasVoted: false,
@@ -28,6 +30,8 @@
       statusText: document.querySelector('#statusText'),
       estimatedOpening: document.querySelector('#estimatedOpening'),
       estimatedOpeningText: document.querySelector('#estimatedOpeningText'),
+      estimatedClosing: document.querySelector('#estimatedClosing'),
+      estimatedClosingText: document.querySelector('#estimatedClosingText'),
       standGrid: document.querySelector('#standGrid'),
       standCount: document.querySelector('#standCount'),
       emptyState: document.querySelector('#emptyState'),
@@ -73,6 +77,7 @@
     };
 
     let activePhotoStand = null;
+    let returnToPhotoOnCancel = false;
     let adminToken = getStoredAdminToken();
     let pendingDangerAction = '';
 
@@ -96,15 +101,19 @@
     function renderVotingStatus() {
       const isOpen = state.status === 'open';
       const estimatedOpening = String(state.estimatedOpening || '').trim();
+      const estimatedClosing = String(state.estimatedClosing || '').trim();
 
       elements.votingStatus.dataset.status = state.status;
       elements.statusText.textContent = statusLabels[state.status] || statusLabels.closed;
       elements.estimatedOpening.hidden = isOpen;
       elements.estimatedOpeningText.textContent = estimatedOpening || 'Horario a confirmar';
+      elements.estimatedClosing.hidden = !isOpen;
+      elements.estimatedClosingText.textContent = estimatedClosing || 'Horario a confirmar';
     }
 
     function renderResultsLink() {
       elements.resultsLink.hidden = !state.showResults;
+      elements.resultsLink.href = state.resultsUrl || '?view=results';
     }
 
     function renderLogo() {
@@ -202,6 +211,7 @@
       state.selectedStandId = activePhotoStand.id;
       elements.photoDialog.close();
       renderSelection();
+      openVoteConfirmation(true);
     }
 
     function renderSelection() {
@@ -233,18 +243,31 @@
       return state.stands.find((stand) => stand.id === state.selectedStandId) || null;
     }
 
-    function openVoteConfirmation() {
+    function openVoteConfirmation(returnToPhoto = false) {
       const selectedStand = getSelectedStand();
       if (!selectedStand || state.status !== 'open' || state.hasVoted) return;
 
+      returnToPhotoOnCancel = returnToPhoto;
       elements.confirmVoteTitle.textContent = 'Confirmá tu voto';
       elements.confirmVoteText.textContent = `Vas a votar por ${selectedStand.name}. Esta acción no se puede deshacer.`;
       setMessage(elements.voteMessage, '');
       elements.submitVoteButton.hidden = false;
       elements.submitVoteButton.disabled = false;
       elements.submitVoteButton.textContent = 'Sí, confirmar voto';
-      elements.cancelVoteButton.textContent = 'Volver';
+      elements.cancelVoteButton.textContent = returnToPhoto
+        ? 'Volver al stand'
+        : 'Volver';
       elements.confirmVoteDialog.showModal();
+    }
+
+    function cancelVoteConfirmation() {
+      const shouldReturnToPhoto = returnToPhotoOnCancel;
+      returnToPhotoOnCancel = false;
+      elements.confirmVoteDialog.close();
+
+      if (shouldReturnToPhoto && activePhotoStand && !state.hasVoted) {
+        openPhoto(activePhotoStand, String(activePhotoStand.number || ''));
+      }
     }
 
     async function submitVote() {
@@ -286,6 +309,7 @@
       }
 
       state.hasVoted = true;
+      returnToPhotoOnCancel = false;
       elements.confirmVoteTitle.textContent = '¡Voto registrado!';
       elements.confirmVoteText.textContent = result.message;
       setMessage(elements.voteMessage, 'Gracias por participar.', 'success');
@@ -591,9 +615,9 @@
     }
 
     elements.selectFromPhotoButton.addEventListener('click', selectActivePhotoStand);
-    elements.confirmVoteButton.addEventListener('click', openVoteConfirmation);
+    elements.confirmVoteButton.addEventListener('click', () => openVoteConfirmation());
     elements.submitVoteButton.addEventListener('click', submitVote);
-    elements.cancelVoteButton.addEventListener('click', () => elements.confirmVoteDialog.close());
+    elements.cancelVoteButton.addEventListener('click', cancelVoteConfirmation);
     document.querySelector('#adminButton').addEventListener('click', openAdminDialog);
     elements.pinForm.addEventListener('submit', submitAdminPin);
     elements.openVotingButton.addEventListener('click', () => changeVotingStatus('open'));
