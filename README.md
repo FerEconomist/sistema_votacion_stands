@@ -50,6 +50,7 @@ Claves reconocidas en `configuracion`:
 | `titulo_sistema` | `Sistema de votación` |
 | `estado_votacion` | `closed` |
 | `horario_apertura` | `18:30 h` |
+| `horario_cierre` | `21:00 h` |
 | `pin_admin` | `1234` |
 | `mostrar_resultados` | `no` |
 | `carpeta_fotos_activas_id` | ID de la carpeta `Fotos activas` |
@@ -58,6 +59,8 @@ Claves reconocidas en `configuracion`:
 La aplicación comienza cerrada si `estado_votacion` está vacío o no existe. Para
 habilitar los votos, cambiá su valor a `open` o utilizá el panel administrativo.
 Mientras permanezca cerrada, `horario_apertura` aparece como horario estimado.
+Cuando está abierta, se muestra `horario_cierre`. Ambos valores se pueden editar
+en conjunto desde el panel administrativo.
 `mostrar_resultados` acepta `si` o `no`.
 
 El ID de la base puede reemplazarse sin editar el código mediante la propiedad de
@@ -98,6 +101,15 @@ La opción simple será guardar un identificador aleatorio persistente en el nav
 
 Si el evento necesita una garantía más fuerte de “una persona, un voto”, la alternativa recomendada es entregar códigos únicos de votación a los asistentes. No hace falta decidirlo para construir la primera versión.
 
+## Votos de simulación
+
+El archivo `Simulation.gs` define `simularMuchosVotosDePrueba`, pero publicar ese
+archivo no ejecuta la simulación automáticamente. Para cargar los 75 votos de
+prueba hay que abrir el proyecto en Apps Script, seleccionar esa función y
+ejecutarla una vez con la votación abierta. Los identificadores de prueba son
+fijos: si se vuelve a ejecutar, no duplica los votos ya creados por la misma
+simulación.
+
 ## Publicación
 
 Los cambios locales se suben al proyecto de Apps Script con `npx clasp push`.
@@ -107,3 +119,9 @@ fotografías solicitará autorización de solo lectura a Google Drive. Este alca
 permite publicar las imágenes sin autorizar cambios en el resto de Drive. La
 acción administrativa `Vaciar stands`, que mueve fotos a `Archivadas`, requiere
 ampliar explícitamente el alcance a acceso de Drive con escritura.
+
+La implementación canónica es la URL conservada por el QR impreso:
+`https://script.google.com/macros/s/AKfycbzh9RDMKcOUcj1jULtdggzN3gJ88OvGWi9H6kCitZB17EKL9OoxPGlrJHWd_19nk5CZ/exec`.
+El archivo local `.clasp.json` apunta al proyecto asociado a ese QR. Para mantener
+la dirección impresa, las versiones nuevas deben actualizar esa implementación
+existente en lugar de crear una implementación diferente.

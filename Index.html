@@ -177,17 +177,26 @@
             </button>
           </div>
 
-          <form class="admin-opening-form" id="openingTimeForm">
-            <label for="adminOpeningTime">Horario estimado de apertura</label>
-            <div>
+          <form class="admin-schedule-form" id="scheduleForm">
+            <div class="admin-schedule-field">
+              <label for="adminOpeningTime">Horario estimado de apertura</label>
               <input
                 id="adminOpeningTime"
                 type="text"
                 maxlength="80"
                 placeholder="Ejemplo: 18:30 h"
               >
-              <button class="button button--secondary" type="submit">Guardar horario</button>
             </div>
+            <div class="admin-schedule-field">
+              <label for="adminClosingTime">Horario estimado de cierre</label>
+              <input
+                id="adminClosingTime"
+                type="text"
+                maxlength="80"
+                placeholder="Ejemplo: 21:00 h"
+              >
+            </div>
+            <button class="button button--secondary" type="submit">Guardar horarios</button>
           </form>
 
           <div class="admin-danger-zone">

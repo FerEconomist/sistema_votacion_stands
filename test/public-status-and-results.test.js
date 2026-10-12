@@ -19,6 +19,21 @@ test('muestra un horario estimado de cierre cuando la votación está abierta', 
   assert.match(page, /id="estimatedClosing"[\s\S]*Cierre estimado/);
 });
 
+test('permite guardar juntos los horarios estimados de apertura y cierre', () => {
+  const server = read('Code.gs');
+  const client = read('JavaScript.html');
+  const page = read('Index.html');
+
+  assert.match(page, /id="scheduleForm"/);
+  assert.match(page, /id="adminOpeningTime"[\s\S]*id="adminClosingTime"/);
+  assert.match(page, />Guardar horarios<\/button>/);
+  assert.match(client, /callServer\('updateVotingSchedule'/);
+  assert.match(client, /closingTime: elements\.adminClosingTime\.value/);
+  assert.match(server, /function updateVotingSchedule\(request\)/);
+  assert.match(server, /setConfigurationValue_\(spreadsheet, 'horario_apertura', openingTime\)/);
+  assert.match(server, /setConfigurationValue_\(spreadsheet, 'horario_cierre', closingTime\)/);
+});
+
 test('abre las primeras diez posiciones en una pestaña nueva', () => {
   const server = read('Code.gs');
   const client = read('JavaScript.html');

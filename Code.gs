@@ -197,20 +197,12 @@ function registerVote(vote) {
   lock.waitLock(10000);
   try {
     const votesSheet = getOrCreateVotesSheet_(spreadsheet);
-    const lastRow = votesSheet.getLastRow();
-
-    if (lastRow > 1) {
-      const registeredDeviceIds = votesSheet
-        .getRange(2, 2, lastRow - 1, 1)
-        .getDisplayValues()
-        .flat();
-      if (registeredDeviceIds.includes(deviceId)) {
-        return {
-          ok: false,
-          alreadyVoted: true,
-          message: 'Este dispositivo ya registró un voto.',
-        };
-      }
+    if (findVoteByDevice_(votesSheet, deviceId)) {
+      return {
+        ok: false,
+        alreadyVoted: true,
+        message: 'Este dispositivo ya registró un voto.',
+      };
     }
 
     votesSheet.appendRow([new Date(), deviceId, stand.id, stand.name]);
@@ -223,6 +215,49 @@ function registerVote(vote) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/** Informa si el navegador ya votó en la edición actual. */
+function getVoteStatus(deviceId) {
+  const normalizedDeviceId = String(deviceId || '').trim();
+  validateDeviceId_(normalizedDeviceId);
+
+  const spreadsheet = getDatabase_();
+  const registeredVote = findVoteByDevice_(
+    findSheet_(spreadsheet, 'votos'),
+    normalizedDeviceId
+  );
+
+  return registeredVote
+    ? {
+        ok: true,
+        hasVoted: true,
+        standId: registeredVote.standId,
+        standName: registeredVote.standName,
+      }
+    : {
+        ok: true,
+        hasVoted: false,
+        standId: '',
+        standName: '',
+      };
+}
+
+function findVoteByDevice_(votesSheet, deviceId) {
+  if (!votesSheet || votesSheet.getLastRow() < 2) return null;
+
+  const rows = votesSheet
+    .getRange(2, 2, votesSheet.getLastRow() - 1, 3)
+    .getDisplayValues();
+  const match = rows.find((row) => String(row[0] || '').trim() === deviceId);
+
+  return match
+    ? {
+        deviceId: String(match[0] || '').trim(),
+        standId: String(match[1] || '').trim(),
+        standName: String(match[2] || '').trim(),
+      }
+    : null;
 }
 
 /** Inicio de sesión administrativo. El PIN nunca se devuelve al navegador. */
@@ -319,6 +354,27 @@ function updateOpeningTime(request) {
     setConfigurationValue_(spreadsheet, 'horario_apertura', openingTime);
     SpreadsheetApp.flush();
     return buildAdminActionResult_(spreadsheet, 'Se actualizó el horario estimado.');
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function updateVotingSchedule(request) {
+  requireAdmin_(request && request.token);
+  const openingTime = String(request && request.openingTime || '').trim();
+  const closingTime = String(request && request.closingTime || '').trim();
+  if (openingTime.length > 80 || closingTime.length > 80) {
+    throw new Error('Los horarios estimados no pueden superar los 80 caracteres.');
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const spreadsheet = getDatabase_();
+    setConfigurationValue_(spreadsheet, 'horario_apertura', openingTime);
+    setConfigurationValue_(spreadsheet, 'horario_cierre', closingTime);
+    SpreadsheetApp.flush();
+    return buildAdminActionResult_(spreadsheet, 'Se actualizaron los horarios estimados.');
   } finally {
     lock.releaseLock();
   }
