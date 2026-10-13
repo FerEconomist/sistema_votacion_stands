@@ -7,6 +7,25 @@ const APP_CONFIG = Object.freeze({
   adminSessionSeconds: 21600,
   adminAttemptWindowSeconds: 300,
   adminMaxAttempts: 6,
+  voteLockWaitMs: 30000,
+  resultsLockWaitMs: 750,
+  publicConfigurationCacheSeconds: 30,
+  publicStateCacheSeconds: 30,
+  standsCacheSeconds: 120,
+  photosCacheSeconds: 120,
+  resultsCacheSeconds: 8,
+  staleResultsCacheSeconds: 60,
+  voteIndexCacheSeconds: 120,
+  voteIndexLockWaitMs: 500,
+});
+
+const CACHE_KEYS = Object.freeze({
+  publicConfiguration: 'public_configuration_v2',
+  publicState: 'public_state_v2',
+  stands: 'public_stands_v2',
+  photos: 'active_photos_v2',
+  results: 'public_results_v2',
+  staleResults: 'public_results_stale_v2',
 });
 
 /** Punto de entrada de la aplicación web. */
@@ -48,9 +67,22 @@ function safeJson_(value) {
 }
 
 function getInitialState_() {
-  const spreadsheet = getDatabase_();
-  const configuration = getConfiguration_(spreadsheet);
-  return buildPublicState_(spreadsheet, configuration);
+  return observeOperation_('public_state', () => {
+    const cache = CacheService.getScriptCache();
+    const cachedState = readCachedJson_(cache, CACHE_KEYS.publicState);
+    if (cachedState) return cachedState;
+
+    const spreadsheet = getDatabase_();
+    const configuration = getCachedPublicConfiguration_(spreadsheet);
+    const publicState = buildPublicState_(spreadsheet, configuration);
+    putCachedJson_(
+      cache,
+      CACHE_KEYS.publicState,
+      publicState,
+      APP_CONFIG.publicStateCacheSeconds
+    );
+    return publicState;
+  });
 }
 
 /** Fuerza el consentimiento de solo lectura de Drive desde el editor de Apps Script. */
@@ -83,7 +115,7 @@ function buildPublicState_(spreadsheet, configuration) {
       configuration.hora_cierre_estimada ||
       '',
     showResults: status === 'open' || normalizeYesNo_(configuration.mostrar_resultados),
-    stands: getStands_(spreadsheet, configuration),
+    stands: getCachedStands_(spreadsheet, configuration),
   };
 }
 
@@ -99,8 +131,40 @@ function getBranding_(configuration) {
 
 /** Devuelve el ranking público sin exponer dispositivos. */
 function getPublicResults() {
+  return observeOperation_('public_results', () => {
+    const cache = CacheService.getScriptCache();
+    const cachedResults = readCachedJson_(cache, CACHE_KEYS.results);
+    if (cachedResults) return cachedResults;
+
+    const staleResults = readCachedJson_(cache, CACHE_KEYS.staleResults);
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(APP_CONFIG.resultsLockWaitMs)) {
+      if (staleResults) return staleResults;
+      return buildPublicResults_();
+    }
+
+    try {
+      const refreshedResults = readCachedJson_(cache, CACHE_KEYS.results);
+      if (refreshedResults) return refreshedResults;
+
+      const results = buildPublicResults_();
+      putCachedJson_(cache, CACHE_KEYS.results, results, APP_CONFIG.resultsCacheSeconds);
+      putCachedJson_(
+        cache,
+        CACHE_KEYS.staleResults,
+        results,
+        APP_CONFIG.staleResultsCacheSeconds
+      );
+      return results;
+    } finally {
+      lock.releaseLock();
+    }
+  });
+}
+
+function buildPublicResults_() {
   const spreadsheet = getDatabase_();
-  const configuration = getConfiguration_(spreadsheet);
+  const configuration = getCachedPublicConfiguration_(spreadsheet);
   const branding = getBranding_(configuration);
   const votingUrl = ScriptApp.getService().getUrl() || '';
   const status = normalizeVotingStatus_(
@@ -174,66 +238,216 @@ function getPublicResults() {
 }
 
 function registerVote(vote) {
-  const standId = String(vote && vote.standId || '').trim();
-  const deviceId = String(vote && vote.deviceId || '').trim();
-  validateDeviceId_(deviceId);
+  return observeOperation_('register_vote', () => {
+    const standId = String(vote && vote.standId || '').trim();
+    const deviceId = String(vote && vote.deviceId || '').trim();
+    const requestId = String(vote && vote.requestId || '').trim();
+    validateDeviceId_(deviceId);
+    validateVoteRequestId_(requestId);
 
-  const spreadsheet = getDatabase_();
-  const configuration = getConfiguration_(spreadsheet);
-  const status = normalizeVotingStatus_(
-    configuration.estado_votacion || configuration.estado || 'closed'
-  );
-  if (status !== 'open') {
-    throw new Error('La votación no está abierta en este momento.');
-  }
+    try {
+      const spreadsheet = getDatabase_();
+      const configuration = getConfiguration_(spreadsheet);
+      const status = normalizeVotingStatus_(
+        configuration.estado_votacion || configuration.estado || 'closed'
+      );
+      if (status !== 'open') {
+        throw new Error('La votación no está abierta en este momento.');
+      }
 
-  const stand = getStands_(spreadsheet, configuration)
-    .find((item) => item.id === standId);
-  if (!stand) {
-    throw new Error('El stand seleccionado no está disponible.');
-  }
+      // La ruta normal usa la lista que ya preparó la carga pública y no recorre Drive.
+      const stand = getVoteEligibleStands_(spreadsheet, configuration)
+        .find((item) => item.id === standId);
+      if (!stand) {
+        throw new Error('El stand seleccionado no está disponible.');
+      }
 
-  const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  try {
-    const votesSheet = getOrCreateVotesSheet_(spreadsheet);
-    if (findVoteByDevice_(votesSheet, deviceId)) {
+      const lock = LockService.getScriptLock();
+      if (!lock.tryLock(APP_CONFIG.voteLockWaitMs)) {
+        return buildTransientVoteFailure_('lock');
+      }
+
+      let registeredVote = null;
+      try {
+        // Se vuelve a consultar el estado dentro del bloqueo para respetar un cierre
+        // administrativo que haya ocurrido mientras este voto esperaba.
+        const lockedConfiguration = getConfiguration_(spreadsheet);
+        const lockedStatus = normalizeVotingStatus_(
+          lockedConfiguration.estado_votacion || lockedConfiguration.estado || 'closed'
+        );
+        if (lockedStatus !== 'open') {
+          throw new Error('La votación no está abierta en este momento.');
+        }
+
+        const votesSheet = getOrCreateVotesSheet_(spreadsheet);
+        registeredVote = findVoteByDevice_(votesSheet, deviceId);
+
+        if (!registeredVote) {
+          try {
+            votesSheet.appendRow([new Date(), deviceId, stand.id, stand.name]);
+            SpreadsheetApp.flush();
+          } catch (error) {
+            markOperationalError_(error, 'sheets_write');
+            throw error;
+          }
+        }
+      } finally {
+        lock.releaseLock();
+      }
+
+      if (registeredVote) {
+        const cachedVote = getCachedVoteStatus_(deviceId);
+        if (requestId && cachedVote && cachedVote.requestId === requestId) {
+          return {
+            ok: true,
+            idempotentRetry: true,
+            standName: registeredVote.standName,
+            message: `Tu voto por ${registeredVote.standName} ya había quedado registrado.`,
+          };
+        }
+        cacheVoteStatus_(deviceId, registeredVote);
+        return {
+          ok: false,
+          alreadyVoted: true,
+          message: 'Este dispositivo ya registró un voto.',
+        };
+      }
+
+      cacheVoteStatus_(
+        deviceId,
+        { standId: stand.id, standName: stand.name },
+        requestId
+      );
       return {
-        ok: false,
-        alreadyVoted: true,
-        message: 'Este dispositivo ya registró un voto.',
+        ok: true,
+        standName: stand.name,
+        message: `Tu voto por ${stand.name} quedó registrado.`,
       };
+    } catch (error) {
+      const category = categorizeOperationalError_(error);
+      if (['lock', 'quota', 'sheets', 'sheets_write', 'temporary'].includes(category)) {
+        return buildTransientVoteFailure_(category);
+      }
+      if (category === 'permissions') {
+        return {
+          ok: false,
+          transient: false,
+          code: 'PERMISSIONS',
+          message: 'El sistema necesita una autorización del administrador antes de aceptar votos.',
+        };
+      }
+      throw error;
     }
-
-    votesSheet.appendRow([new Date(), deviceId, stand.id, stand.name]);
-    SpreadsheetApp.flush();
-    return {
-      ok: true,
-      standName: stand.name,
-      message: `Tu voto por ${stand.name} quedó registrado.`,
-    };
-  } finally {
-    lock.releaseLock();
-  }
+  });
 }
 
 /** Informa si el navegador ya votó en la edición actual. */
 function getVoteStatus(deviceId) {
-  const normalizedDeviceId = String(deviceId || '').trim();
-  validateDeviceId_(normalizedDeviceId);
+  return observeOperation_('vote_status', () => {
+    const normalizedDeviceId = String(deviceId || '').trim();
+    validateDeviceId_(normalizedDeviceId);
 
-  const spreadsheet = getDatabase_();
-  const registeredVote = findVoteByDevice_(
-    findSheet_(spreadsheet, 'votos'),
-    normalizedDeviceId
-  );
+    const cachedVote = getCachedVoteStatus_(normalizedDeviceId);
+    if (cachedVote) return buildVoteStatusResult_(cachedVote);
 
+    const cache = CacheService.getScriptCache();
+    const indexKey = voteIndexCacheKey_();
+    let voteIndex = readCachedJson_(cache, indexKey);
+    let indexWasBuilt = false;
+    if (!voteIndex) {
+      const indexLock = LockService.getScriptLock();
+      if (!indexLock.tryLock(APP_CONFIG.voteIndexLockWaitMs)) {
+        const spreadsheet = getDatabase_();
+        const registeredVote = findVoteByDevice_(
+          findSheet_(spreadsheet, 'votos'),
+          normalizedDeviceId
+        );
+        if (registeredVote) cacheVoteStatus_(normalizedDeviceId, registeredVote);
+        return buildVoteStatusResult_(registeredVote);
+      }
+
+      try {
+        voteIndex = readCachedJson_(cache, indexKey);
+        if (!voteIndex) {
+          const spreadsheet = getDatabase_();
+          voteIndex = buildVoteIndex_(findSheet_(spreadsheet, 'votos'));
+          putCachedJson_(cache, indexKey, voteIndex, APP_CONFIG.voteIndexCacheSeconds);
+          indexWasBuilt = true;
+        }
+      } finally {
+        indexLock.releaseLock();
+      }
+    }
+
+    const voteHashes = Array.isArray(voteIndex)
+      ? voteIndex
+      : Array.isArray(voteIndex.hashes) ? voteIndex.hashes : [];
+    let registeredVote = voteHashes.includes(digestKey_(normalizedDeviceId))
+      ? { standId: '', standName: '' }
+      : null;
+
+    // Una ausencia sólo es definitiva si la hoja no creció desde que se creó
+    // el índice. Así la caché nunca se convierte en fuente de verdad negativa.
+    if (!registeredVote && !indexWasBuilt) {
+      const spreadsheet = getDatabase_();
+      const votesSheet = findSheet_(spreadsheet, 'votos');
+      const currentVoteCount = votesSheet ? Math.max(0, votesSheet.getLastRow() - 1) : 0;
+      const indexedVoteCount = Array.isArray(voteIndex)
+        ? -1
+        : Number(voteIndex.rowCount || 0);
+      if (currentVoteCount !== indexedVoteCount) {
+        registeredVote = findVoteByDevice_(votesSheet, normalizedDeviceId);
+      }
+    }
+    if (registeredVote) cacheVoteStatus_(normalizedDeviceId, registeredVote);
+    return buildVoteStatusResult_(registeredVote);
+  });
+}
+
+function findVoteByDevice_(votesSheet, deviceId) {
+  if (!votesSheet || votesSheet.getLastRow() < 2) return null;
+
+  const deviceCell = votesSheet
+    .getRange(2, 2, votesSheet.getLastRow() - 1, 1)
+    .createTextFinder(deviceId)
+    .matchEntireCell(true)
+    .findNext();
+  const match = deviceCell
+    ? votesSheet.getRange(deviceCell.getRow(), 2, 1, 3).getDisplayValues()[0]
+    : null;
+
+  return match
+    ? {
+        deviceId: String(match[0] || '').trim(),
+        standId: String(match[1] || '').trim(),
+        standName: String(match[2] || '').trim(),
+      }
+    : null;
+}
+
+function buildVoteIndex_(votesSheet) {
+  if (!votesSheet || votesSheet.getLastRow() < 2) {
+    return { rowCount: 0, hashes: [] };
+  }
+
+  const rowCount = votesSheet.getLastRow() - 1;
+  const hashes = votesSheet
+    .getRange(2, 2, rowCount, 1)
+    .getDisplayValues()
+    .flat()
+    .map((deviceId) => String(deviceId || '').trim())
+    .filter(Boolean)
+    .map(digestKey_);
+  return { rowCount, hashes };
+}
+
+function buildVoteStatusResult_(registeredVote) {
   return registeredVote
     ? {
         ok: true,
         hasVoted: true,
-        standId: registeredVote.standId,
-        standName: registeredVote.standName,
+        standId: String(registeredVote.standId || ''),
+        standName: String(registeredVote.standName || ''),
       }
     : {
         ok: true,
@@ -243,21 +457,53 @@ function getVoteStatus(deviceId) {
       };
 }
 
-function findVoteByDevice_(votesSheet, deviceId) {
-  if (!votesSheet || votesSheet.getLastRow() < 2) return null;
+function getCachedVoteStatus_(deviceId) {
+  return readCachedJson_(
+    CacheService.getScriptCache(),
+    voteStatusCacheKey_(deviceId)
+  );
+}
 
-  const rows = votesSheet
-    .getRange(2, 2, votesSheet.getLastRow() - 1, 3)
-    .getDisplayValues();
-  const match = rows.find((row) => String(row[0] || '').trim() === deviceId);
+function cacheVoteStatus_(deviceId, registeredVote, requestId) {
+  putCachedJson_(
+    CacheService.getScriptCache(),
+    voteStatusCacheKey_(deviceId),
+    {
+      standId: String(registeredVote && registeredVote.standId || ''),
+      standName: String(registeredVote && registeredVote.standName || ''),
+      requestId: String(requestId || ''),
+    },
+    APP_CONFIG.voteIndexCacheSeconds
+  );
+}
 
-  return match
-    ? {
-        deviceId: String(match[0] || '').trim(),
-        standId: String(match[1] || '').trim(),
-        standName: String(match[2] || '').trim(),
-      }
-    : null;
+function invalidateVoteIndexCache_() {
+  CacheService.getScriptCache().remove(voteIndexCacheKey_());
+}
+
+function voteIndexCacheKey_() {
+  return `vote_index_${getVoteEditionToken_()}`;
+}
+
+function voteStatusCacheKey_(deviceId) {
+  return `vote_status_${getVoteEditionToken_()}_${digestKey_(deviceId).slice(0, 32)}`;
+}
+
+function getVoteEditionToken_() {
+  const properties = PropertiesService.getScriptProperties();
+  let token = properties.getProperty('VOTE_EDITION_TOKEN');
+  if (!token) {
+    token = Utilities.getUuid().replace(/-/g, '');
+    properties.setProperty('VOTE_EDITION_TOKEN', token);
+  }
+  return token;
+}
+
+function rotateVoteEditionToken_() {
+  PropertiesService.getScriptProperties().setProperty(
+    'VOTE_EDITION_TOKEN',
+    Utilities.getUuid().replace(/-/g, '')
+  );
 }
 
 /** Inicio de sesión administrativo. El PIN nunca se devuelve al navegador. */
@@ -331,6 +577,7 @@ function setVotingStatus(request) {
     const spreadsheet = getDatabase_();
     setConfigurationValue_(spreadsheet, 'estado_votacion', requestedStatus);
     SpreadsheetApp.flush();
+    invalidatePublicCaches_();
     return buildAdminActionResult_(
       spreadsheet,
       requestedStatus === 'open' ? 'La votación quedó abierta.' : 'La votación quedó cerrada.'
@@ -353,6 +600,7 @@ function updateOpeningTime(request) {
     const spreadsheet = getDatabase_();
     setConfigurationValue_(spreadsheet, 'horario_apertura', openingTime);
     SpreadsheetApp.flush();
+    invalidatePublicCaches_();
     return buildAdminActionResult_(spreadsheet, 'Se actualizó el horario estimado.');
   } finally {
     lock.releaseLock();
@@ -374,6 +622,7 @@ function updateVotingSchedule(request) {
     setConfigurationValue_(spreadsheet, 'horario_apertura', openingTime);
     setConfigurationValue_(spreadsheet, 'horario_cierre', closingTime);
     SpreadsheetApp.flush();
+    invalidatePublicCaches_();
     return buildAdminActionResult_(spreadsheet, 'Se actualizaron los horarios estimados.');
   } finally {
     lock.releaseLock();
@@ -392,6 +641,8 @@ function resetVoting(request) {
     clearSheetData_(findSheet_(spreadsheet, 'votos'));
     setConfigurationValue_(spreadsheet, 'estado_votacion', 'closed');
     SpreadsheetApp.flush();
+    rotateVoteEditionToken_();
+    invalidatePublicCaches_();
 
     return {
       ...buildAdminActionResult_(
@@ -407,45 +658,38 @@ function resetVoting(request) {
   }
 }
 
-/** Archiva la edición completa y deja Fotos activas vacía. */
+/** Archiva y limpia los datos de la edición; las fotos se eliminan manualmente. */
 function emptyStands(request) {
   requireAdminAndPin_(request && request.token, request && request.pin);
   const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
+  lock.waitLock(20000);
   try {
     const spreadsheet = getDatabase_();
-    const configuration = getConfiguration_(spreadsheet);
-    const activeFolder = getConfiguredFolder_(
-      configuration,
-      'carpeta_fotos_activas_id',
-      'Fotos activas'
-    );
-    const archivedFolder = getConfiguredFolder_(
-      configuration,
-      'carpeta_fotos_archivadas_id',
-      'Archivadas'
-    );
     const label = buildArchiveLabel_(spreadsheet, 'Stands');
-    const destinationFolder = archivedFolder.createFolder(label);
-
     const archivedVotes = archiveVotes_(spreadsheet, label);
     const archivedStands = archiveStands_(spreadsheet, label);
-    const movedItems = moveFolderContents_(activeFolder, destinationFolder);
 
     clearSheetData_(findSheet_(spreadsheet, 'votos'));
     clearSheetData_(findSheet_(spreadsheet, 'stands'));
     setConfigurationValue_(spreadsheet, 'estado_votacion', 'closed');
     SpreadsheetApp.flush();
+    rotateVoteEditionToken_();
+    invalidatePublicCaches_({ stands: true, photos: true });
+
+    const result = buildAdminActionResult_(
+      spreadsheet,
+      'Se archivaron y vaciaron los votos y los stands. La votación quedó cerrada. ' +
+        'Ahora eliminá manualmente las fotos de Fotos activas antes de cargar las nuevas.'
+    );
+    // El estado administrativo puede consultar las fotos todavía presentes.
+    // Se invalida otra vez para que la próxima recarga refleje el borrado manual.
+    invalidatePublicCaches_({ stands: true, photos: true });
 
     return {
-      ...buildAdminActionResult_(
-        spreadsheet,
-        `Se preparó una nueva edición. Las fotos anteriores quedaron en ${label}.`
-      ),
+      ...result,
       archivedVotes,
       archivedStands,
-      movedItems,
-      archiveFolderName: label,
+      photosRequireManualCleanup: true,
     };
   } finally {
     lock.releaseLock();
@@ -463,7 +707,7 @@ function buildAdminActionResult_(spreadsheet, message) {
 }
 
 function buildAdminState_(spreadsheet, configuration) {
-  const stands = getStands_(spreadsheet, configuration);
+  const stands = getCachedStands_(spreadsheet, configuration);
   const votesSheet = findSheet_(spreadsheet, 'votos');
   const photoMap = getActiveStandPhotos_(configuration);
 
@@ -522,6 +766,12 @@ function validateDeviceId_(deviceId) {
   }
 }
 
+function validateVoteRequestId_(requestId) {
+  if (requestId && !/^[A-Za-z0-9-]{12,100}$/.test(requestId)) {
+    throw new Error('No se pudo validar la solicitud de voto. Intentá nuevamente.');
+  }
+}
+
 function getDatabase_() {
   const scriptProperties = PropertiesService.getScriptProperties();
   const spreadsheetId =
@@ -541,6 +791,47 @@ function getConfiguration_(spreadsheet) {
       if (key) configuration[key] = String(row[1] || '').trim();
       return configuration;
     }, {});
+}
+
+function getCachedPublicConfiguration_(spreadsheet) {
+  const cache = CacheService.getScriptCache();
+  const cachedConfiguration = readCachedJson_(cache, CACHE_KEYS.publicConfiguration);
+  if (cachedConfiguration) return cachedConfiguration;
+
+  const configuration = getConfiguration_(spreadsheet);
+  const publicKeys = [
+    'nombre_institucion',
+    'titulo_sistema',
+    'logo_url',
+    'logo_id_o_logo_url',
+    'estado_votacion',
+    'estado',
+    'horario_apertura',
+    'apertura_estimada',
+    'fecha_hora_apertura',
+    'hora_apertura_estimada',
+    'horario_cierre',
+    'cierre_estimado',
+    'fecha_hora_cierre',
+    'hora_cierre_estimada',
+    'mostrar_resultados',
+    // Sólo se usa internamente para resolver la carpeta; nunca se envía al navegador.
+    'carpeta_fotos_activas_id',
+  ];
+  const publicConfiguration = publicKeys.reduce((result, key) => {
+    if (Object.prototype.hasOwnProperty.call(configuration, key)) {
+      result[key] = configuration[key];
+    }
+    return result;
+  }, {});
+
+  putCachedJson_(
+    cache,
+    CACHE_KEYS.publicConfiguration,
+    publicConfiguration,
+    APP_CONFIG.publicConfigurationCacheSeconds
+  );
+  return publicConfiguration;
 }
 
 function setConfigurationValue_(spreadsheet, key, value) {
@@ -563,6 +854,63 @@ function setConfigurationValue_(spreadsheet, key, value) {
   }
 
   sheet.appendRow([key, String(value || ''), '']);
+}
+
+function getCachedStands_(spreadsheet, configuration) {
+  const cache = CacheService.getScriptCache();
+  const cachedStands = readCachedJson_(cache, CACHE_KEYS.stands);
+  if (Array.isArray(cachedStands)) return cachedStands;
+
+  const stands = getStands_(spreadsheet, configuration);
+  putCachedJson_(cache, CACHE_KEYS.stands, stands, APP_CONFIG.standsCacheSeconds);
+  return stands;
+}
+
+/**
+ * Catálogo mínimo para registrar un voto. Si Stands tiene datos, sólo consulta
+ * esa hoja. En instalaciones basadas exclusivamente en nombres de fotos usa el
+ * catálogo creado al servir la página y reconstruye desde Drive sólo si la
+ * caché fue expulsada.
+ */
+function getVoteEligibleStands_(spreadsheet, configuration) {
+  const configuredStands = readConfiguredVoteStands_(
+    findSheet_(spreadsheet, 'stands')
+  );
+  if (configuredStands !== null) return configuredStands;
+
+  const cache = CacheService.getScriptCache();
+  const cachedStands = readCachedJson_(cache, CACHE_KEYS.stands);
+  const stands = Array.isArray(cachedStands)
+    ? cachedStands
+    : getCachedStands_(spreadsheet, configuration);
+  return stands.map((stand) => ({ id: stand.id, name: stand.name }));
+}
+
+function readConfiguredVoteStands_(sheet) {
+  if (!sheet || sheet.getLastRow() < 2) return null;
+
+  const values = sheet.getDataRange().getValues();
+  const headers = values.shift().map(normalizeKey_);
+  const idIndex = findHeaderIndex_(headers, ['id', 'stand_id']);
+  const nameIndex = findHeaderIndex_(headers, ['nombre', 'name', 'stand']);
+  const visibleIndex = findHeaderIndex_(headers, ['visible', 'activo']);
+  const orderIndex = findHeaderIndex_(headers, ['orden', 'order']);
+
+  return values
+    .map((row, index) => {
+      const fallbackNumber = index + 1;
+      const rawVisible = visibleIndex >= 0 ? row[visibleIndex] : true;
+      return {
+        id: String(idIndex >= 0 && row[idIndex] || `stand-${fallbackNumber}`),
+        name: String(nameIndex >= 0 && row[nameIndex] || `Stand ${fallbackNumber}`),
+        visible: !['false', 'no', '0'].includes(String(rawVisible).trim().toLowerCase()),
+        order: Number(orderIndex >= 0 ? row[orderIndex] : fallbackNumber) || fallbackNumber,
+      };
+    })
+    .filter((stand) => stand.visible)
+    .sort((first, second) => first.order - second.order)
+    .slice(0, APP_CONFIG.maxStandCount)
+    .map(({ id, name }) => ({ id, name }));
 }
 
 function getStands_(spreadsheet, configuration) {
@@ -622,12 +970,23 @@ function buildPhotoStands_(photoMap) {
 }
 
 function getActiveStandPhotos_(configuration) {
+  const cache = CacheService.getScriptCache();
+  const cachedPhotos = readCachedJson_(cache, CACHE_KEYS.photos);
+  if (cachedPhotos) return cachedPhotos;
+
+  const photos = loadActiveStandPhotos_(configuration);
+  putCachedJson_(cache, CACHE_KEYS.photos, photos, APP_CONFIG.photosCacheSeconds);
+  return photos;
+}
+
+function loadActiveStandPhotos_(configuration) {
   const folderId = getDriveFolderId_(configuration.carpeta_fotos_activas_id);
 
   try {
     const folder = findActivePhotosFolder_(folderId);
     if (!folder) {
-      console.error('No se encontró la carpeta Fotos activas en Drive.');
+      logOperationalEvent_('drive_photos', 'error', 'drive_read', 0,
+        'No se encontró la carpeta Fotos activas en Drive.');
       return {};
     }
 
@@ -651,7 +1010,13 @@ function getActiveStandPhotos_(configuration) {
     }
     return photos;
   } catch (error) {
-    console.error(`No se pudo leer la carpeta Fotos activas: ${error.message}`);
+    logOperationalEvent_(
+      'drive_photos',
+      'error',
+      categorizeOperationalError_(error, 'drive_read'),
+      0,
+      error && error.message
+    );
     return {};
   }
 }
@@ -759,35 +1124,6 @@ function clearSheetData_(sheet) {
   }
 }
 
-function getConfiguredFolder_(configuration, key, label) {
-  const folderId = getDriveFolderId_(configuration[key]);
-  if (!folderId) {
-    throw new Error(`Falta configurar ${key} en la hoja Configuracion.`);
-  }
-
-  try {
-    return DriveApp.getFolderById(folderId);
-  } catch (error) {
-    throw new Error(`No se pudo acceder a la carpeta ${label}. Revisá su ID y sus permisos.`);
-  }
-}
-
-function moveFolderContents_(sourceFolder, destinationFolder) {
-  let movedItems = 0;
-  const files = sourceFolder.getFiles();
-  while (files.hasNext()) {
-    files.next().moveTo(destinationFolder);
-    movedItems += 1;
-  }
-
-  const folders = sourceFolder.getFolders();
-  while (folders.hasNext()) {
-    folders.next().moveTo(destinationFolder);
-    movedItems += 1;
-  }
-  return movedItems;
-}
-
 function buildArchiveLabel_(spreadsheet, prefix) {
   const timezone = spreadsheet.getSpreadsheetTimeZone() || Session.getScriptTimeZone();
   return `${prefix} ${Utilities.formatDate(new Date(), timezone, 'yyyy-MM-dd HH.mm.ss')}`;
@@ -796,6 +1132,130 @@ function buildArchiveLabel_(spreadsheet, prefix) {
 function formatDateTime_(spreadsheet, date) {
   const timezone = spreadsheet.getSpreadsheetTimeZone() || Session.getScriptTimeZone();
   return Utilities.formatDate(date, timezone, "dd/MM/yyyy 'a las' HH:mm:ss");
+}
+
+function readCachedJson_(cache, key) {
+  try {
+    const value = cache.get(key);
+    return value ? JSON.parse(value) : null;
+  } catch (error) {
+    logOperationalEvent_('cache_read', 'error', 'cache', 0, error && error.message);
+    return null;
+  }
+}
+
+function putCachedJson_(cache, key, value, seconds) {
+  try {
+    cache.put(key, JSON.stringify(value), seconds);
+  } catch (error) {
+    // La caché es una optimización: un rechazo o expulsión nunca impide operar.
+    logOperationalEvent_('cache_write', 'error', 'cache', 0, error && error.message);
+  }
+}
+
+function invalidateResultsCache_() {
+  CacheService.getScriptCache().remove(CACHE_KEYS.results);
+}
+
+function invalidatePublicCaches_(options) {
+  const settings = options || {};
+  const keys = [
+    CACHE_KEYS.publicConfiguration,
+    CACHE_KEYS.publicState,
+    CACHE_KEYS.results,
+    CACHE_KEYS.staleResults,
+  ];
+  if (settings.stands) keys.push(CACHE_KEYS.stands);
+  if (settings.photos) keys.push(CACHE_KEYS.photos);
+  CacheService.getScriptCache().removeAll(keys);
+}
+
+function buildTransientVoteFailure_(category) {
+  const lockFailure = category === 'lock';
+  const response = {
+    ok: false,
+    transient: true,
+    code: lockFailure ? 'SYSTEM_BUSY' : 'TEMPORARY_FAILURE',
+    message: lockFailure
+      ? 'Hay muchos votos al mismo tiempo. Esperá un instante e intentá nuevamente.'
+      : 'El servicio está temporalmente ocupado. Intentá nuevamente en unos segundos.',
+  };
+  Object.defineProperty(response, 'operationalCategory', {
+    value: category || 'temporary',
+    enumerable: false,
+  });
+  return response;
+}
+
+function markOperationalError_(error, category) {
+  try {
+    error.operationalCategory = category;
+  } catch (ignoredError) {
+    // Algunas excepciones nativas no permiten propiedades adicionales.
+  }
+  return error;
+}
+
+function categorizeOperationalError_(error, fallbackCategory) {
+  if (error && error.operationalCategory) return error.operationalCategory;
+
+  const message = String(error && error.message || error || '').toLowerCase();
+  if (/lock|bloqueo|obtain lock/.test(message)) return 'lock';
+  if (/quota|too many|service invoked too many|rate limit|l[ií]mite/.test(message)) {
+    return 'quota';
+  }
+  if (/temporar|timeout|timed out|server error|try again/.test(message)) {
+    return 'temporary';
+  }
+  if (/permission|authorization|authorisation|forbidden|permis|autoriz/.test(message)) {
+    return 'permissions';
+  }
+  if (/drive/.test(message)) return 'drive_read';
+  if (/spreadsheet|sheet|range|append|hoja/.test(message)) return 'sheets';
+  return fallbackCategory || 'unknown';
+}
+
+function observeOperation_(operation, callback) {
+  const startedAt = Date.now();
+  try {
+    const result = callback();
+    const resultCode = result && result.ok === false
+      ? String(result.code || (result.alreadyVoted ? 'ALREADY_VOTED' : 'REJECTED'))
+      : 'ok';
+    const category = result && result.transient
+      ? (result.operationalCategory ||
+        (result.code === 'SYSTEM_BUSY' ? 'lock' : 'temporary'))
+      : 'none';
+    logOperationalEvent_(
+      operation,
+      resultCode,
+      category,
+      Date.now() - startedAt,
+      ''
+    );
+    return result;
+  } catch (error) {
+    logOperationalEvent_(
+      operation,
+      'error',
+      categorizeOperationalError_(error),
+      Date.now() - startedAt,
+      error && error.message
+    );
+    throw error;
+  }
+}
+
+function logOperationalEvent_(operation, result, category, durationMs, detail) {
+  const event = {
+    event: 'operation',
+    operation: String(operation || 'unknown'),
+    result: String(result || 'unknown'),
+    category: String(category || 'unknown'),
+    durationMs: Math.max(0, Number(durationMs) || 0),
+  };
+  if (detail) event.detail = String(detail).slice(0, 500);
+  console.log(JSON.stringify(event));
 }
 
 function findSheet_(spreadsheet, expectedName) {

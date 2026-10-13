@@ -29,6 +29,12 @@ La interfaz incluye:
 - ranking público con las primeras diez posiciones y actualización automática;
 - lectura automática de fotos llamadas `Stand 1`, `Stand 2`, etc. desde `Fotos activas`.
 
+La versión preparada para el evento incorpora caché temporal de configuración,
+stands, fotos y ranking; validación liviana de stands al votar; espera ampliada
+para escrituras concurrentes; hasta dos reintentos automáticos para fallos
+transitorios; y registros operativos sin identificadores de dispositivos. La
+hoja `Votos` continúa siendo la fuente definitiva para rechazar duplicados.
+
 ## Diseño propuesto para Google Sheets
 
 Se usará un único archivo con estas hojas:
@@ -90,10 +96,11 @@ nombre de los archivos: al renombrar una foto como `Stand 18.jpg`, aparece el
 `Stand 18` en la próxima carga de la aplicación. Si la hoja `Stands` contiene
 datos, se respetan sus nombres, visibilidad y orden, también con un máximo de 30.
 
-Al ejecutar `Vaciar stands`, la aplicación crea una subcarpeta fechada dentro de
-`Archivadas`, mueve allí el contenido de `Fotos activas`, respalda votos y datos
-de stands, limpia la edición actual y deja la votación cerrada. La carpeta
-`imagenes`, utilizada para el logo, no se modifica.
+Al ejecutar `Vaciar stands`, la aplicación respalda los votos y los datos de
+stands en sus hojas de historial, limpia la edición actual y deja la votación
+cerrada. Las fotografías no se mueven ni se eliminan: el operador debe borrar
+manualmente el contenido de `Fotos activas` y luego cargar allí las imágenes de
+la nueva edición. La carpeta `imagenes`, utilizada para el logo, no se modifica.
 
 ## Criterio para evitar votos repetidos
 
@@ -110,6 +117,11 @@ ejecutarla una vez con la votación abierta. Los identificadores de prueba son
 fijos: si se vuelve a ejecutar, no duplica los votos ya creados por la misma
 simulación.
 
+Para probar 1.500 votos existe `prepararPruebaVolumen1500`, protegida para que no
+pueda ejecutarse contra la base real, y `verificarPruebaVolumen1500`. Los pasos
+seguros y la prueba manual de concurrencia están documentados en
+[`OPERACION_EVENTO.md`](OPERACION_EVENTO.md).
+
 ## Publicación
 
 Los cambios locales se suben al proyecto de Apps Script con `npx clasp push`.
@@ -117,8 +129,7 @@ Después hay que actualizar la implementación de la aplicación web para que la
 URL pública utilice la nueva versión. La primera ejecución con las funciones de
 fotografías solicitará autorización de solo lectura a Google Drive. Este alcance
 permite publicar las imágenes sin autorizar cambios en el resto de Drive. La
-acción administrativa `Vaciar stands`, que mueve fotos a `Archivadas`, requiere
-ampliar explícitamente el alcance a acceso de Drive con escritura.
+aplicación no mueve ni elimina archivos de Drive.
 
 La implementación canónica es la URL conservada por el QR impreso:
 `https://script.google.com/macros/s/AKfycbzh9RDMKcOUcj1jULtdggzN3gJ88OvGWi9H6kCitZB17EKL9OoxPGlrJHWd_19nk5CZ/exec`.

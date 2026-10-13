@@ -26,6 +26,9 @@
       resultsTotalCard: document.querySelector('#resultsTotalCard'),
       votingLinks: document.querySelectorAll('.voting-link'),
     };
+    const REFRESH_INTERVAL_MS = 15000;
+    let refreshTimer = 0;
+    let refreshInFlight = false;
 
     function render() {
       elements.institutionName.textContent = state.institutionName;
@@ -109,20 +112,43 @@
     }
 
     function refreshResults() {
-      if (!window.google || !google.script || !google.script.run) return;
+      if (document.hidden || refreshInFlight ||
+          !window.google || !google.script || !google.script.run) {
+        scheduleRefresh();
+        return;
+      }
 
+      refreshInFlight = true;
       google.script.run
         .withSuccessHandler((result) => {
           Object.assign(state, result || {});
           render();
+          refreshInFlight = false;
+          scheduleRefresh();
         })
         .withFailureHandler(() => {
           elements.updatedAt.textContent = 'No se pudo actualizar. Reintentando…';
+          refreshInFlight = false;
+          scheduleRefresh();
         })
         .getPublicResults();
     }
 
+    function scheduleRefresh() {
+      window.clearTimeout(refreshTimer);
+      refreshTimer = 0;
+      if (!document.hidden) {
+        refreshTimer = window.setTimeout(refreshResults, REFRESH_INTERVAL_MS);
+      }
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      window.clearTimeout(refreshTimer);
+      refreshTimer = 0;
+      if (!document.hidden) refreshResults();
+    });
+
     render();
-    window.setInterval(refreshResults, 7000);
+    scheduleRefresh();
   })();
 </script>

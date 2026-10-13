@@ -56,6 +56,21 @@ Referencias oficiales:
 - [Lock Service](https://developers.google.com/apps-script/reference/lock/)
 - [Buenas prácticas de rendimiento](https://developers.google.com/apps-script/guides/support/best-practices)
 
+## Estado de implementación
+
+Las cuatro prioridades de código quedaron implementadas el 12 de octubre de
+2026. También se incorporaron pruebas automatizadas y funciones protegidas para
+la prueba de 1.500 votos. El 13 de octubre de 2026 se ejecutó esa prueba en una
+copia aislada: se cargaron y contaron 1.500 votos, con 1.500 dispositivos únicos,
+0 duplicados y un ranking válido para los 9 stands disponibles. La implementación
+temporal se retiró y la URL canónica del QR continuó respondiendo correctamente.
+Ese mismo día se ejecutaron 20 solicitudes web simultáneas: las 20 fueron
+aceptadas sin fallos transitorios; una segunda ráfaga con las mismas solicitudes
+fue reconocida como 20 reintentos idempotentes y dejó 0 duplicados y 0 filas
+incompletas. Permanecen manuales la verificación final en Android/iPhone y la
+recuperación visual ante una desconexión breve. El procedimiento está en
+`OPERACION_EVENTO.md`.
+
 ## Mejoras propuestas
 
 ### Prioridad 1: endurecer el registro de votos
@@ -114,6 +129,10 @@ Debe realizarse en una copia de la base o en una edición de prueba, no agregand
   actualizar la página.
 - Archivar o eliminar la edición de prueba al finalizar.
 
+Resultado del 13 de octubre de 2026: carga y verificación completadas en la copia
+aislada, con `loadedVotes: 1500`, `uniqueDevices: 1500`, `duplicates: 0` y 9
+entradas en `topTen`. La copia se conserva por ahora como evidencia de prueba.
+
 ### Prueba de concurrencia
 
 Una carga masiva mediante una sola función no reproduce votantes simultáneos.
@@ -126,6 +145,11 @@ También se necesita una prueba práctica o automatizada de concurrencia.
 - Revisar en Apps Script las ejecuciones completadas, fallidas y en espera.
 - Mantener una pantalla de resultados abierta durante la prueba para incluir su
   consumo real.
+
+Resultado automatizado del 13 de octubre de 2026: 20 ejecuciones web simultáneas
+aceptadas en 25,9 segundos, sin fallos transitorios. Los 20 reintentos paralelos
+posteriores se resolvieron como idempotentes en 18,1 segundos. La verificación
+final encontró 20 dispositivos únicos, 0 duplicados y 0 filas incompletas.
 
 ### Prueba operativa final
 

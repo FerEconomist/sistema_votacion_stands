@@ -21,6 +21,7 @@
       open: 'Votación abierta',
       closed: 'Votación cerrada',
     };
+    const MAX_VOTE_RETRIES = 2;
 
     const elements = {
       institutionName: document.querySelector('#institutionName'),
@@ -293,14 +294,57 @@
       setMessage(elements.voteMessage, '');
 
       try {
-        const result = await callServer('registerVote', {
+        const result = await registerVoteWithRetry({
           standId: selectedStand.id,
           deviceId,
+          requestId: createVoteRequestId(),
         });
         handleVoteResult(result);
       } catch (error) {
         showVoteError(error.message || 'No pudimos registrar el voto. Intentá nuevamente.');
       }
+    }
+
+    async function registerVoteWithRetry(payload) {
+      let lastError = null;
+
+      for (let attempt = 0; attempt <= MAX_VOTE_RETRIES; attempt += 1) {
+        try {
+          const result = await callServer('registerVote', payload);
+          if (!result || !result.transient || attempt === MAX_VOTE_RETRIES) {
+            return result;
+          }
+          lastError = new Error(result.message || 'El sistema está temporalmente ocupado.');
+        } catch (error) {
+          if (!isTransientVoteError(error) || attempt === MAX_VOTE_RETRIES) throw error;
+          lastError = error;
+        }
+
+        setMessage(
+          elements.voteMessage,
+          `El sistema está ocupado. Reintentando (${attempt + 1}/${MAX_VOTE_RETRIES})…`
+        );
+        await waitForVoteRetry_(attempt);
+      }
+
+      throw lastError || new Error('No pudimos registrar el voto. Intentá nuevamente.');
+    }
+
+    function isTransientVoteError(error) {
+      const message = String(error && error.message || error || '').toLowerCase();
+      return /temporar|ocupad|busy|quota|too many|lock|bloqueo|timeout|timed out|network|red|server error/.test(message);
+    }
+
+    function waitForVoteRetry_(attempt) {
+      const baseDelay = 450 * (attempt + 1);
+      const jitter = Math.floor(Math.random() * 500);
+      return new Promise((resolve) => window.setTimeout(resolve, baseDelay + jitter));
+    }
+
+    function createVoteRequestId() {
+      return window.crypto && typeof window.crypto.randomUUID === 'function'
+        ? window.crypto.randomUUID()
+        : `vote-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
     }
 
     function handleVoteResult(result) {
@@ -467,8 +511,8 @@
       } else {
         elements.dangerDialogTitle.textContent = 'Vaciar los stands';
         elements.dangerDialogText.textContent =
-          'Se archivarán los votos y los stands. Las fotos activas se moverán a una nueva subcarpeta dentro de Archivadas.';
-        elements.confirmDangerButton.textContent = 'Archivar y vaciar';
+          'Se archivarán y vaciarán los votos y los stands, y la votación quedará cerrada. Las fotos de Fotos activas no se modificarán: deberás eliminarlas manualmente antes de cargar las nuevas.';
+        elements.confirmDangerButton.textContent = 'Archivar y vaciar datos';
       }
 
       elements.dangerDialog.showModal();
